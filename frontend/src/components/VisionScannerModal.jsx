@@ -21,21 +21,16 @@ export default function VisionScannerModal({ isOpen, onClose, onScanComplete }) 
   };
 
   const handleScan = async () => {
-    if (!selectedFile && !preview) return;
+    if (!preview) return;
     setLoading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      if (selectedFile) {
-        formData.append('image', selectedFile);
-      } else {
-        formData.append('image', preview);
-      }
-
+      // Send the base64 data URL as JSON — works in both dev and Vercel serverless
       const res = await fetch('/api/vision-scan', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: preview }),
       });
       const data = await res.json();
 
