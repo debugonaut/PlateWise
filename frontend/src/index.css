@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-surface: #FAFAFA;
+    --bg-card: #FFFFFF;
+    --border-subtle: #E4E4E7;
+    --border-strong: #18181B;
+    --text-primary: #09090B;
+    --text-muted: #71717A;
+    --accent: #18181B;
+  }
+
+  body {
+    background-color: #0A0A0C;
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+}
+
+/* Minimalist backdrop striping like the reference image */
+.fluted-backdrop {
+  background-color: #0d0d11;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.015),
+    rgba(255, 255, 255, 0.015) 1px,
+    transparent 1px,
+    transparent 40px
+  );
+}
+
+/* Subtle dot grid pattern */
+.dot-pattern {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Hide scrollbars cleanly */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E4E4E7;
+  border-radius: 9999px;
+}
