@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Camera, Upload, ArrowRight, X, Search, Check, Sparkles } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Camera, Upload, ArrowRight, X, Search, Check, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { HOUSEHOLD_INGREDIENTS, INGREDIENT_CATEGORIES } from '../../data/householdIngredients';
 import { DEMO_PHOTOS } from '../../data/demoPhotos';
 
@@ -12,6 +12,23 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
   const [isDragging, setIsDragging] = useState(false);
   const [demoBusy, setDemoBusy] = useState(null);
   const fileInputRef = useRef(null);
+  const dragCounter = useRef(0);
+
+  // Prevent browser from opening dragged files when dropped outside dropzone
+  useEffect(() => {
+    const preventDragOver = (e) => {
+      e.preventDefault();
+    };
+    const preventDrop = (e) => {
+      e.preventDefault();
+    };
+    window.addEventListener('dragover', preventDragOver);
+    window.addEventListener('drop', preventDrop);
+    return () => {
+      window.removeEventListener('dragover', preventDragOver);
+      window.removeEventListener('drop', preventDrop);
+    };
+  }, []);
 
   // Phone photos are routinely 10-12 MP / 5-8 MB. Sending that raw is slow and
   // can be rejected by the vision API, so shrink to a sane edge length first.
@@ -234,29 +251,58 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
       <div
         onDragEnter={(e) => {
           e.preventDefault();
-          setIsDragging(true);
+          e.stopPropagation();
+          dragCounter.current += 1;
+          if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+            setIsDragging(true);
+          }
         }}
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragging(true);
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'copy';
+          if (!isDragging) setIsDragging(true);
         }}
         onDragLeave={(e) => {
-          // Ignore drags moving between children of the zone.
-          if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false);
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter.current -= 1;
+          if (dragCounter.current <= 0) {
+            dragCounter.current = 0;
+            setIsDragging(false);
+          }
         }}
         onDrop={(e) => {
           e.preventDefault();
           e.stopPropagation();
           setIsDragging(false);
+          dragCounter.current = 0;
           const dropped = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-          processFile(dropped);
+          if (dropped) {
+            processFile(dropped);
+          }
         }}
-        className={`relative border-2 border-dashed rounded-3xl p-6 sm:p-8 text-center transition-colors shadow-xs ${
+        className={`relative border-2 border-dashed rounded-3xl p-6 sm:p-8 text-center transition-all shadow-xs ${
           isDragging
-            ? 'border-neutral-900 bg-neutral-50 ring-2 ring-neutral-900/10'
+            ? 'border-neutral-900 bg-neutral-900/5 ring-4 ring-neutral-900/10 scale-[1.01]'
             : 'border-neutral-200 hover:border-neutral-400 bg-white'
         }`}
       >
+        {/* Full-surface drag overlay with pointer-events-none to prevent child event interruptions */}
+        {isDragging && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/95 backdrop-blur-xs rounded-3xl border-2 border-dashed border-neutral-900 pointer-events-none animate-in fade-in duration-150">
+            <div className="w-14 h-14 rounded-2xl bg-neutral-900 text-white flex items-center justify-center mb-3 shadow-lg">
+              <Upload className="w-7 h-7 animate-bounce" />
+            </div>
+            <p className="text-sm font-semibold text-neutral-900">
+              Drop photo to scan all ingredients
+            </p>
+            <p className="text-xs font-mono text-neutral-500 mt-1">
+              Supports fridge shelves, pantry counters, grocery hauls
+            </p>
+          </div>
+        )}
+
         {preview ? (
           <div className="relative max-h-60 overflow-hidden rounded-2xl mx-auto mb-4 bg-neutral-100 group">
             <img src={preview} alt="Fridge scan preview" className="w-full h-full object-contain max-h-60 mx-auto" />
@@ -309,34 +355,50 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
           <span>{preview ? 'Change Photo' : 'Select Photo to Scan'}</span>
         </label>
 
-        {/* Demo Mode: one click, no file picker. Each thumbnail is a real
-            ingredient photo the model was verified on, so a live walkthrough
-            never depends on the room lighting or on finding a good photo in the
-            moment. Real inference still runs on click -- nothing is stubbed. */}
+        {/* Multi-ingredient Demo Scenarios */}
         {DEMO_PHOTOS.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-neutral-100">
-            <p className="text-[11px] font-mono text-neutral-400 mb-2 inline-flex items-center gap-1.5">
-              <Sparkles className="w-3 h-3" />
-              Or try a demo photo
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center">
+          <div className="mt-6 pt-5 border-t border-neutral-100 text-left">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <p className="text-xs font-mono text-neutral-600 inline-flex items-center gap-1.5 font-medium">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Or test with multi-ingredient demo photos
+              </p>
+              <span className="text-[10px] font-mono text-neutral-400 hidden sm:inline">1-click AI scan</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {DEMO_PHOTOS.map((photo) => (
                 <button
                   key={photo.id}
                   type="button"
                   onClick={() => runDemoPhoto(photo)}
                   disabled={loading}
-                  title={`${photo.label} \u2014 verified at ${photo.verifiedConfidence}%`}
-                  className={`group relative w-16 rounded-xl overflow-hidden border transition-all ${
+                  className={`group relative text-left p-3 rounded-2xl border transition-all flex flex-col justify-between ${
                     demoBusy === photo.id
-                      ? 'border-neutral-900 ring-2 ring-neutral-900/15'
-                      : 'border-neutral-200 hover:border-neutral-500 hover:-translate-y-0.5'
+                      ? 'border-neutral-900 ring-2 ring-neutral-900/20 bg-neutral-50'
+                      : 'border-neutral-200 hover:border-neutral-400 bg-white hover:shadow-md hover:-translate-y-0.5'
                   } ${loading ? 'opacity-60 cursor-wait' : ''}`}
                 >
-                  <img src={photo.file} alt={photo.label} className="w-full h-12 object-cover" />
-                  <span className="block text-[9px] font-mono text-neutral-500 truncate px-1 py-0.5">
-                    {photo.label}
-                  </span>
+                  <div className="relative w-full h-28 rounded-xl overflow-hidden mb-2.5 bg-neutral-100">
+                    <img
+                      src={photo.file}
+                      alt={photo.label}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-[10px] font-mono font-medium text-white shadow-xs">
+                      {photo.itemCount}
+                    </span>
+                    <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-[9px] font-mono font-medium text-neutral-800 shadow-xs">
+                      {photo.category}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-xs text-neutral-900 mb-0.5 group-hover:text-black">
+                      {photo.label}
+                    </div>
+                    <div className="text-[10px] font-mono text-neutral-500 line-clamp-1">
+                      {photo.description}
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
