@@ -80,30 +80,31 @@
     \end{center}
 \end{figure}
 
-\Large{\textbf {Continuous Assessment (CA) Activity 2}}\\[2mm]
-\large{\textbf {Individual Full-Stack Mini-Project Report}}\\[4mm]
-\LARGE{\textbf{\@projecttitle}} \\ [8mm]
-\large{\textit{\textbf {Submitted by,}}} \\ [3mm]
+\Large{\textbf {A Project Report on}}\\[3mm]
+\LARGE{\textbf{\@projecttitle}} \\ [6mm]
+\large{\textit{\textbf {Submitted by,}}} \\ [2mm]
 \begin{tabular}{@{}p{6.0cm}l@{}l}
 \@students
 \end{tabular}
 
-\vspace*{12mm}
+\vspace*{8mm}
 \large{\bf{A Report submitted to MIT Academy of Engineering, Alandi(D), Pune,}}
 \large{\bf{An Autonomous Institute Affiliated to Savitribai Phule Pune University}}
-\large{\bf{in partial fulfillment of the requirements for}}
-\vspace*{8mm}
+\large{\bf{in partial fulfillment of the requirements of}}
+\vspace*{6mm}
 
-{\large{\bf{SECOND YEAR BACHELOR OF TECHNOLOGY}} \\in}\\
-\Large{\bf{\@department}} \\ [10mm]
+{\large{\bf{SECOND YEAR BACHELOR OF TECHNOLOGY}}} \\[2mm]
+{\large{in}} \\[2mm]
+{\Large{\bf{\@department}}} \\[6mm]
 
-\LARGE{\textbf{Department of \@department}} \\  \\
-\LARGE{\textbf{MIT Academy of Engineering}} \\
-\large{(An Autonomous Institute Affiliated to Savitribai Phule Pune University)}\\
-\Large\textbf{Alandi (D), Pune -- 412105} \\[3mm]
-\LARGE{\textbf{(\@academicyear)}}
+{\LARGE{\textbf{Department of \@department}}} \\[3mm]
+{\LARGE{\textbf{MIT Academy of Engineering}}} \\[2mm]
+{\large{(An Autonomous Institute Affiliated to Savitribai Phule Pune University)}} \\[2mm]
+{\Large\textbf{Alandi (D), Pune -- 412105}} \\[3mm]
+{\LARGE{\textbf{(\@academicyear)}}} \\[2mm]
 \rule{\textwidth}{0.01in}
 \end{center}
+\clearpage
 }
 
 \clearpage

@@ -19,7 +19,7 @@ The scaled image is re-encoded as a progressive JPEG at $0.90$ quality. This com
 
 \subsection*{Base64 JSON Transport \& Edge Ingestion}
 The compressed blob is converted into a standard base64 Data URL and transmitted to \texttt{/api/vision-scan} via an HTTP POST request with a JSON payload:
-\begin{lstlisting}[language=JavaScript]
+\begin{lstlisting}
 const res = await fetch('/api/vision-scan', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -30,7 +30,7 @@ The serverless endpoint configures a 10 MB body-parser limit to accommodate high
 
 \subsection*{Multi-Modal Vision Inference Cascade}
 The serverless function invokes the Groq Cloud SDK using Groq's Language Processing Units (LPUs). To guarantee absolute operational availability, the endpoint establishes an automated candidate fallback array:
-\begin{lstlisting}[language=JavaScript]
+\begin{lstlisting}
 const candidateModels = [
   process.env.GROQ_VISION_MODEL,
   'qwen/qwen3.8-27b',
@@ -73,7 +73,7 @@ A candidate recipe $R$ comprises a required ingredient set $R_{req} = \{ r_1, r_
 where $\mathbb{I}(\cdot)$ is the indicator function, $w_r$ denotes the nutritional or perishability weight of ingredient $r$, and $\lambda$ represents the penalty factor for missing items.
 
 This optimization is operationalized through system-prompt engineering delivered to Groq's \texttt{openai/gpt-oss-120b} reasoning model. The prompt enforces deterministic generation of four balanced recipes conforming strictly to JSON schema:
-\begin{lstlisting}[language=JavaScript]
+\begin{lstlisting}
 {
   "title": "String",
   "prepTime": "String (e.g. 25m)",
@@ -108,7 +108,7 @@ For any missing ingredient $m \in R_{req} \setminus I$, the audit engine compute
 
 \section{Interactive Cooking Workstation}
 In Stage 04, PlateWise shifts into an active culinary assistant. The application dynamically embeds an interactive YouTube cooking masterclass video player:
-\begin{lstlisting}[language=JavaScript]
+\begin{lstlisting}
 const embedUrl = `https://www.youtube.com/embed?listType=search&list=${
   encodeURIComponent('how to cook recipe ' + recipe.title)
 }`;
@@ -132,7 +132,7 @@ PlateWise is deployed on the Vercel Edge Serverless Network. Continuous integrat
 \textbf{Production URL:} \url{https://plate-wise.vercel.app}
 \end{center}
 The deployment configuration in \texttt{vercel.json} specifies optimized build routines:
-\begin{lstlisting}[language=json]
+\begin{lstlisting}
 {
   "buildCommand": "npm --prefix frontend install && npm --prefix frontend run build",
   "outputDirectory": "frontend/dist",
