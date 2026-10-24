@@ -281,7 +281,7 @@ I assert that the implementation details, system architecture, source code files
   <li>The source code, algorithms, and interface designs were independently authored and developed without unauthorized duplication.</li>
   <li>This submission has not been presented or submitted to any other university, institute, or examining body for the award of any degree or diploma.</li>
   <li>All external open-source libraries, foundation models, and cloud APIs utilized in this software have been explicitly acknowledged and cited.</li>
-  <li>The production deployment of the project is publicly accessible and functional at <a href="https://plate-wise.vercel.app" style="color: #0284c7; text-decoration: none;">https://plate-wise.vercel.app</a> with repository source code at <a href="https://github.com/debugonaut/PlateWise" style="color: #0284c7; text-decoration: none;">https://github.com/debugonaut/PlateWise</a>.</li>
+  <li>The production deployment of the project is publicly accessible and functional at <a href="https://platewise1705.vercel.app/" style="color: #0284c7; text-decoration: none;">https://platewise1705.vercel.app/</a> with repository source code at <a href="https://github.com/debugonaut/PlateWise" style="color: #0284c7; text-decoration: none;">https://github.com/debugonaut/PlateWise</a>.</li>
 </ol>
 
 <div style="margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;">
@@ -311,7 +311,7 @@ To address this challenge, this project presents <strong>PlateWise</strong>, an 
 The detected inventory is fed into a context-aware culinary reasoning engine (<code>openai/gpt-oss-120b</code> / <code>llama-3.3-70b-versatile</code>) that dynamically factors in time of day (Breakfast, Lunch, Dinner), seasonal availability (Monsoon, Summer, Winter), and regional cuisine styles (Indian Comfort, Mediterranean, Continental) to generate four structured gourmet recipes. The platform further incorporates an automated Pantry Audit Engine that computes mathematical compatibility percentages, identifies missing items, and provides intelligent culinary substitutions. An interactive Cooking Workstation embeds real-time YouTube Masterclass video tutorials and interactive progress checklists, while an automated Recipe Vault mirrors completed meals to client <code>localStorage</code> to ensure complete resilience against serverless cold-start data loss.
 </p>
 <p>
-Comprehensive empirical evaluation demonstrates sub-2-second vision detection latency, robust handling of real-world multi-ingredient scenes, and seamless full-pipeline execution from visual capture to cooked recipe archiving. The production application is publicly deployed on Vercel at <a href="https://plate-wise.vercel.app">https://plate-wise.vercel.app</a> with open-source code on GitHub.
+Comprehensive empirical evaluation demonstrates sub-2-second vision detection latency, robust handling of real-world multi-ingredient scenes, and seamless full-pipeline execution from visual capture to cooked recipe archiving. The production application is publicly deployed on Vercel at <a href="https://platewise1705.vercel.app/">https://platewise1705.vercel.app/</a> with open-source code on GitHub.
 </p>
 
 <!-- ACKNOWLEDGEMENT PAGE -->
@@ -858,7 +858,7 @@ To validate multi-ingredient recognition, three distinct culinary scenes were te
 
 <h2>6.4 Conclusion</h2>
 <p>
-The <strong>PlateWise</strong> project successfully demonstrates how multi-modal vision models, serverless edge architecture, and modern web frameworks can be synthesized into an elegant, zero-cost platform that solves the domestic food waste crisis. The application was designed, implemented, tested, and deployed individually by Aadesh Khande for <strong>Continuous Assessment (CA) Activity 2</strong>. The production deployment is live at <a href="https://plate-wise.vercel.app">https://plate-wise.vercel.app</a> with repository source code at <a href="https://github.com/debugonaut/PlateWise">https://github.com/debugonaut/PlateWise</a>.
+The <strong>PlateWise</strong> project successfully demonstrates how multi-modal vision models, serverless edge architecture, and modern web frameworks can be synthesized into an elegant, zero-cost platform that solves the domestic food waste crisis. The application was designed, implemented, tested, and deployed individually by Aadesh Khande for <strong>Continuous Assessment (CA) Activity 2</strong>. The production deployment is live at <a href="https://platewise1705.vercel.app/">https://platewise1705.vercel.app/</a> with repository source code at <a href="https://github.com/debugonaut/PlateWise">https://github.com/debugonaut/PlateWise</a>.
 </p>
 
 <!-- APPENDIX A -->
