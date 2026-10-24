@@ -1,0 +1,62 @@
+\chapter{Literature Review}
+
+\section{Introduction}
+Conducting a comprehensive literature review is essential to examine prior scientific and commercial efforts in computational gastronomy, automated food recognition, and intelligent recipe recommendation. This chapter reviews academic studies on domestic food waste dynamics, traditional rule-based recipe aggregators, deep learning techniques for food image classification, and recent advancements in multi-modal vision-language architectures. Furthermore, a systematic comparative analysis identifies critical gaps in contemporary systems that justify the architectural design of PlateWise.
+
+\section{Household Food Waste and Kitchen Economics}
+A substantial body of literature in environmental economics and domestic sustainability emphasizes that consumer-level waste represents the most inefficient stage of the food supply chain. Gustavsson et al. \cite{gustavsson2011global} demonstrated that approximately one-third of all food produced for human consumption is lost or wasted globally, with industrialized regions exhibiting disproportionately high losses at the domestic consumption phase.
+
+Recent empirical research by Aschemann-Witzel et al. \cite{aschemann2015causes} analyzed behavioral drivers of household food waste. Their findings revealed that consumer waste is rarely attributable to deliberate neglect; rather, it is primarily driven by:
+\begin{enumerate}
+    \item \textbf{Inventory Opacity:} Difficulty maintaining situational awareness over heterogeneous items stored in refrigerators and cupboards.
+    \item \textbf{Culinary Rigidity:} Over-reliance on strict, prescriptive recipes that demand exact ingredients, leading home cooks to discard partial ingredients because they cannot find a complementary culinary use.
+    \item \textbf{Perceived Time Poverty:} The cognitive fatigue of cataloging food items and researching suitable dishes after long workdays.
+\end{enumerate}
+These studies underscore the urgent need for computational tools that reduce the cognitive effort required to utilize surplus household provisions.
+
+\section{Traditional Recipe Recommendation Platforms}
+Over the past two decades, several digital tools have attempted to provide ingredient-based recipe searching:
+\begin{itemize}
+    \item \textbf{SuperCook \cite{supercook2023}:} SuperCook is an established web portal that matches recipes against an inventory of user-selected items. However, SuperCook relies exclusively on manual checkbox and text selection from an overwhelming list of thousands of items. Users report severe interaction fatigue when attempting to catalog their pantry. Moreover, SuperCook queries static databases, often requiring exotic secondary ingredients that negate the platform's core utility.
+    \item \textbf{MyFridgeFood \cite{myfridgefood2022}:} MyFridgeFood presents a basic two-column checklist of common kitchen staples. While simple, the interface lacks intelligence: recipes are matched purely through database boolean keyword lookups without understanding ingredient freshness, preparation time, cultural nuances, or sensible culinary substitutions.
+    \item \textbf{Cookpad \& Allrecipes \cite{allrecipes2023}:} These platforms are community-driven recipe databases indexed by dish title and user ratings. However, their search algorithms are designed for title queries rather than reverse-pantry composition, offering minimal utility when attempting to prevent perishable spoilage.
+\end{itemize}
+
+\section{Evolution of Computer Vision in Food Recognition}
+Early attempts to apply artificial intelligence to kitchen inventories focused on computer vision classifiers trained on isolated food datasets:
+\begin{itemize}
+    \item \textbf{Single-Label Classification (ResNet \& MobileNet):} Mezgec and Korou\v{s}i\'{c} Seljak \cite{mezgec2017nutrinet} explored deep convolutional neural networks (CNNs) for dietary assessment, demonstrating high accuracy when classifying single plates of prepared food or centered individual fruits. However, when these models are exposed to multi-item, overlapping refrigerator scenes with occlusions, packaging reflections, and varying lighting conditions, single-label classifiers completely break down, identifying at most one dominant label.
+    \item \textbf{Object Detection Models (YOLO \& Faster R-CNN):} Researchers such as Bola\~{n}os et al. \cite{bolanos2017simultaneous} utilized bounding-box object detection models (e.g., YOLOv4, Faster R-CNN) to detect multiple food items simultaneously. While effective on benchmark datasets, these models are strictly bound to predefined closed-set labels (typically 20 to 80 categories) and require massive computational resources that are prohibitively expensive for consumer web deployments without high-end cloud GPUs.
+    \item \textbf{Emergence of Multi-Modal Vision-Language Models (VLMs):} The introduction of large vision-language models—such as Qwen-VL \cite{bai2023qwen} and Llama Vision \cite{dubey2024llama}—has revolutionized visual scene understanding. By unifying vision encoders with autoregressive transformer decoders, multi-modal LLMs possess open-vocabulary semantic understanding. They can parse cluttered refrigerator shelves, distinguish fresh produce from packaged goods, understand brand labels, and output structured JSON inventories in a single forward pass.
+\end{itemize}
+
+\section{Comparative Analysis of Existing Systems}
+To systematically evaluate the state of the art, Table \ref{tab:comparison} benchmarks PlateWise against existing culinary platforms across six architectural dimensions.
+
+\begin{table}[H]
+\centering
+\caption{Systematic Comparison of Culinary and Recipe Platforms}
+\label{tab:comparison}
+\begin{tabular}{|p{3.2cm}|p{2.3cm}|p{2.3cm}|p{2.3cm}|p{3.2cm}|}
+\hline
+\textbf{Feature Dimension} & \textbf{SuperCook} & \textbf{MyFridgeFood} & \textbf{Cookpad} & \textbf{PlateWise (Proposed)} \\ \hline
+\textbf{Visual Ingestion} & None (Manual text/checkbox only) & None (Static checkbox list) & Photo upload for dish review only & \textbf{AI Vision (Drag \& Drop, Camera, Multi-Item Presets)} \\ \hline
+\textbf{Multi-Ingredient Detection} & N/A & N/A & N/A & \textbf{Simultaneous 16+ Items (Groq Qwen 3.8 27B)} \\ \hline
+\textbf{Contextual Adaptation} & Static filters only & Basic boolean match & User-submitted categories & \textbf{Dynamic (Time of Day, Season, Cuisine Vectors)} \\ \hline
+\textbf{Ingredient Auditing \& Substitution} & None (Requires exact match) & None & User comments only & \textbf{Algorithmic Match \% \& Smart Culinary Substitutes} \\ \hline
+\textbf{Interactive Cooking Station} & External links & Static text page & Static text page & \textbf{Embedded YouTube Masterclass + Step Checklist} \\ \hline
+\textbf{Cold-Start Resilience} & Server session & Cookies & User account login & \textbf{Dual-Layer (Serverless Edge + LocalStorage Mirror)} \\ \hline
+\textbf{Inference Latency} & N/A & & & \textbf{$< 1.5$s via Groq LPU Inference Cloud} \\ \hline
+\end{tabular}
+\end{table}
+
+\section{Research Gaps and Identified Needs}
+From the literature and comparative analysis, four pivotal gaps in current systems are evident:
+\begin{enumerate}
+    \item \textbf{Input Barrier:} The absence of multi-modal visual ingestion forces users into tedious manual inventories, leading to high drop-off rates before recipe discovery.
+    \item \textbf{Lack of Contextual Fluidity:} Existing platforms treat recipes as immutable blueprints rather than flexible culinary guidelines, failing to adapt to weather, time of day, or regional taste profiles.
+    \item \textbf{The “Missing Ingredient” Deadlock:} When home cooks lack one or two items, conventional search engines either discard the recipe entirely or leave the cook stranded without substitutions.
+    \item \textbf{Fragmented User Journey:} Existing sites stop at the recipe page, leaving the user to navigate elsewhere for video instruction or cooking progress tracking.
+\end{enumerate}
+
+PlateWise addresses these gaps by implementing a cohesive, unified 5-stage pipeline combining multi-modal visual inference, contextual LLM generation, algorithmic ingredient auditing, and synchronized video masterclasses.

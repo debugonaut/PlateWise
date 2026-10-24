@@ -1,0 +1,146 @@
+\chapter{Proposed Methodology and Implementation}
+
+\section{System Architecture Overview}
+The PlateWise platform is engineered as a decoupled, cloud-native full-stack system designed for optimal responsiveness, low latency, and zero infrastructure overhead. The frontend is built using React 19 and bundled via Vite, providing a component-driven Single Page Application (SPA). The backend is constructed using stateless Vercel Serverless Edge Functions in Node.js (ES Modules). Communication between the client and backend occurs entirely over asynchronous HTTPS REST endpoints returning structured JSON data.
+
+Figure \ref{fig:blockdiagram} (presented in Chapter 4) illustrates the tier separation. By avoiding persistent server instances (such as traditional Express servers running on dedicated VMs), the entire system scales elastically with incoming demand and incurs zero hosting expenditure when idle.
+
+\section{Multi-Modal Vision Processing Pipeline}
+The primary technical bottleneck in visual food recognition is managing image size and achieving reliable multi-ingredient identification across complex, overlapping scenes. PlateWise resolves this via a multi-tiered pipeline:
+
+\subsection*{Client-Side Canvas Downscaling}
+Modern smartphone cameras routinely capture photographs at resolutions of 12 megapixels or higher, resulting in files between 5 MB and 12 MB. Transmitting raw files of this size over mobile networks introduces latency of 4 to 8 seconds and frequently exceeds serverless payload boundaries.
+
+To optimize transmission, PlateWise executes client-side downscaling using the HTML5 \texttt{<canvas>} API before transmission. When a user drops or selects an image file, the browser dynamically renders the image into an off-screen canvas with a constrained maximum edge length:
+\begin{equation}
+scale = \min\left(1.0, \frac{MAX\_EDGE}{\max(width, height)}\right), \quad \text{where } MAX\_EDGE = 1024\text{ px}
+\end{equation}
+The scaled image is re-encoded as a progressive JPEG at $0.90$ quality. This compression achieves an average payload reduction of $85\%$ to $90\%$ (yielding typical payload sizes of 250 KB to 600 KB) while preserving all fine-grained visual details necessary for grocery item recognition.
+
+\subsection*{Base64 JSON Transport \& Edge Ingestion}
+The compressed blob is converted into a standard base64 Data URL and transmitted to \texttt{/api/vision-scan} via an HTTP POST request with a JSON payload:
+\begin{lstlisting}[language=JavaScript]
+const res = await fetch('/api/vision-scan', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ image: imagePayload })
+});
+\end{lstlisting}
+The serverless endpoint configures a 10 MB body-parser limit to accommodate high-density visual payloads without truncation.
+
+\subsection*{Multi-Modal Vision Inference Cascade}
+The serverless function invokes the Groq Cloud SDK using Groq's Language Processing Units (LPUs). To guarantee absolute operational availability, the endpoint establishes an automated candidate fallback array:
+\begin{lstlisting}[language=JavaScript]
+const candidateModels = [
+  process.env.GROQ_VISION_MODEL,
+  'qwen/qwen3.8-27b',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'llama-3.2-11b-vision-preview'
+].filter(Boolean);
+\end{lstlisting}
+The system loops sequentially through the candidate models. If the primary model encounters transient rate limiting, network timeout, or service unavailability, the request automatically cascades to the next candidate model without surfacing an error to the user.
+
+The prompt instructs the model to identify every edible food ingredient, produce item, dairy product, sauce, spice, and protein present in the photograph, categorizing items into verified food classifications (\textit{Produce, Dairy, Proteins \& Nuts, Oils \& Sauces, Grains \& Pulses, Spices}). The model returns a strictly formatted JSON array:
+\begin{equation}
+Data = \left[ \{ \text{name}: \text{"Tomatoes"}, \text{category}: \text{"Produce"} \}, \ldots \right]
+\end{equation}
+Testing on diverse refrigerator photos demonstrates the simultaneous detection of up to 16 distinct ingredients in an average time of $1.24$ seconds.
+
+\section{Mathematical Modeling of Recipe Recommendation}
+Once the inventory is extracted, PlateWise formulates recipe generation as a constrained multi-variable optimization problem.
+
+\subsection*{Inventory and Context Vector Representation}
+Let the user's active inventory be represented as a finite set of $N$ ingredients:
+\begin{equation}
+I = \{ i_1, i_2, i_3, \ldots, i_N \}
+\end{equation}
+The operational context is defined as a 3-dimensional vector $C$:
+\begin{equation}
+C = \begin{bmatrix} T_{time} \\ S_{season} \\ K_{culture} \end{bmatrix}
+\end{equation}
+where:
+\begin{itemize}
+    \item $T_{time} \in \{ \text{Breakfast}, \text{Lunch}, \text{Dinner} \}$
+    \item $S_{season} \in \{ \text{Monsoon}, \text{Summer}, \text{Winter} \}$
+    \item $K_{culture} \in \{ \text{Indian Comfort}, \text{Mediterranean}, \text{Continental}, \ldots \}$
+\end{itemize}
+
+\subsection*{Optimization Objective}
+A candidate recipe $R$ comprises a required ingredient set $R_{req} = \{ r_1, r_2, \ldots, r_M \}$, an estimated preparation time $T_{prep}$, and a step sequence $S_{steps}$. The goal of the recommendation engine is to select recipes that maximize pantry utilization while minimizing missing components:
+\begin{equation}
+\max_{R} \quad \sum_{r \in R_{req}} w_r \cdot \mathbb{I}(r \in I) - \lambda \sum_{m \in R_{req}} \mathbb{I}(m \notin I)
+\end{equation}
+where $\mathbb{I}(\cdot)$ is the indicator function, $w_r$ denotes the nutritional or perishability weight of ingredient $r$, and $\lambda$ represents the penalty factor for missing items.
+
+This optimization is operationalized through system-prompt engineering delivered to Groq's \texttt{openai/gpt-oss-120b} reasoning model. The prompt enforces deterministic generation of four balanced recipes conforming strictly to JSON schema:
+\begin{lstlisting}[language=JavaScript]
+{
+  "title": "String",
+  "prepTime": "String (e.g. 25m)",
+  "difficulty": "Easy | Medium",
+  "ingredients": [{ "name": "String", "amount": "String" }],
+  "steps": ["Step 1 description", "Step 2 description"]
+}
+\end{lstlisting}
+
+\section{Ingredient Audit and Substitution Model}
+When a user selects a recipe, the system executes an automated audit via \texttt{/api/audit-ingredients} to assess pantry coverage.
+
+\subsection*{Compatibility Calculation}
+The mathematical match percentage is computed as:
+\begin{equation}
+Match(R, I) = \left( \frac{|R_{req} \cap I|}{|R_{req}|} \right) \times 100\%
+\end{equation}
+where:
+\begin{itemize}
+    \item $|R_{req} \cap I|$ is the cardinality of available required ingredients.
+    \item $|R_{req}|$ is the total number of ingredients mandated by the recipe.
+\end{itemize}
+The interface classifies the match score into three actionable visual tiers:
+\begin{itemize}
+    \item \textbf{Optimal ($\ge 80\%$):} High pantry coverage; recipe is immediately ready to cook.
+    \item \textbf{Feasible ($50\% - 79\%$):} Partial coverage; intelligent substitutions required.
+    \item \textbf{Low ($< 50\%$):} Major ingredients missing; extensive substitutions advised.
+\end{itemize}
+
+\subsection*{Culinary Substitution Heuristics}
+For any missing ingredient $m \in R_{req} \setminus I$, the audit engine computes a replacement $s \in I$ or standard household alternatives based on culinary functional equivalence (e.g., acidifier equivalence: lemon juice $\leftrightarrow$ vinegar; dairy fat equivalence: Greek yogurt $\leftrightarrow$ sour cream $\leftrightarrow$ curd).
+
+\section{Interactive Cooking Workstation}
+In Stage 04, PlateWise shifts into an active culinary assistant. The application dynamically embeds an interactive YouTube cooking masterclass video player:
+\begin{lstlisting}[language=JavaScript]
+const embedUrl = `https://www.youtube.com/embed?listType=search&list=${
+  encodeURIComponent('how to cook recipe ' + recipe.title)
+}`;
+\end{lstlisting}
+This allows users to watch culinary techniques directly within the screen without external navigation. Beside the player, each step of the recipe is rendered as an interactive checklist. Clicking a step applies a strike-through style and records completed state, allowing cooks to track their active progress hands-free.
+
+\section{Dual-Tier State Persistence and Cold-Start Resilience}
+Serverless architectures inherently scale down to zero instances during periods of inactivity. If a user completes a meal and the serverless container is recycled, in-memory state is discarded.
+
+To guarantee zero data loss, PlateWise implements dual-tier state synchronization:
+\begin{enumerate}
+    \item \textbf{Client LocalStorage Mirroring:} Every addition to the active pantry and every logged meal is instantly serialized into the browser's persistent \texttt{localStorage} under the key \texttt{platewise\_vault}.
+    \item \textbf{Serverless API Persistence:} The client simultaneously dispatches a POST request to \texttt{/api/vault}.
+    \item \textbf{Hydration Loop:} When the user launches the application, the client hydrator reads \texttt{localStorage} before network resolution, ensuring immediate rendering of historical logs even during offline or poor connectivity conditions.
+\end{enumerate}
+
+\section{Cloud Deployment and Continuous Integration}
+PlateWise is deployed on the Vercel Edge Serverless Network. Continuous integration and automated deployment are linked directly to the main branch of the GitHub repository:
+\begin{center}
+\textbf{Repository:} \url{https://github.com/debugonaut/PlateWise} \\
+\textbf{Production URL:} \url{https://plate-wise.vercel.app}
+\end{center}
+The deployment configuration in \texttt{vercel.json} specifies optimized build routines:
+\begin{lstlisting}[language=json]
+{
+  "buildCommand": "npm --prefix frontend install && npm --prefix frontend run build",
+  "outputDirectory": "frontend/dist",
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 30
+    }
+  }
+}
+\end{lstlisting}
+Build artifacts are verified across every commit, ensuring that production releases maintain 100\% availability.

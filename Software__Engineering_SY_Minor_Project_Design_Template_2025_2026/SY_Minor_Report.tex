@@ -1,0 +1,65 @@
+\documentclass{mitaoeminorreportty}
+
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning}
+\usepackage{circuitikz}
+\usepackage{pgf-umlsd}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  keywordstyle=\color{blue},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red}
+}
+
+\newenvironment{acknowledgement}{\section*{Acknowledgement}}{}
+
+\begin{document}
+
+\projecttitle{PlateWise: AI-Driven Fridge-to-Recipe Kitchen Intelligence and Waste Mitigation Platform}
+\student{Aadesh Khande}{202401100090}
+
+\department{Software Engineering}
+\academicyear{2025--2026}
+
+\pagestyle{empty}
+\titlepage
+\declaration
+
+\newpage
+\pagestyle{plain}
+\pagenumbering{roman}
+\setcounter{page}{3}
+
+\input{abstract}
+\input{acknowledgement}
+
+\setcounter{tocdepth}{3}
+\tableofcontents
+
+\input{listoffigures}
+\input{listoftables}
+
+\newpage
+\pagenumbering{arabic}
+
+\input{chapter1}
+\input{chapter2}
+\input{chapter3}
+\input{chapter4}
+\input{chapter5}
+\input{chapter6}
+
+\input{appendix1}
+\input{appendix2}
+\input{bibliography}
+
+\end{document}

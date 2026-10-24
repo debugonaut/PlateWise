@@ -1,0 +1,73 @@
+\chapter{Problem Definition and Scope}
+
+\section{Introduction}
+In contemporary urban households, modern convenience often conceals substantial domestic inefficiencies. The proliferation of bulk grocery shopping, erratic professional work schedules, and complex dietary choices frequently results in refrigerators cluttered with perishable goods that spoil unnoticed. Although consumers are increasingly conscious of environmental sustainability and household expenditure, the lack of automated, intelligent tools leaves domestic food management in an antiquated state.
+
+The success of home cooking is fundamentally governed by situational pantry awareness: knowing what ingredients are on hand, understanding how they can be harmonized into satisfying meals, and executing recipes efficiently without unnecessary trips to grocery stores. When cooks encounter friction at any stage of this pipeline, they default to food delivery applications, accelerating domestic food waste and increasing living costs.
+
+To solve this problem comprehensively, this project defines and implements \textbf{PlateWise}, an individual full-stack web application designed to bridge the gap between refrigerator inventory perception and active culinary execution through artificial intelligence.
+
+\section{Detailed Problem Definition}
+At present, there is no unified, zero-cost digital tool that seamlessly guides a user from an unstructured photograph of their kitchen directly to an executable cooking masterclass. Specifically, the problem manifests across four major dimensions:
+
+\begin{enumerate}
+    \item \textbf{High Cognitive Barrier to Cataloging:} Home cooks perceive manually indexing 15 to 30 items in their refrigerator as an unacceptable chore. Existing applications that require typing each item fail to achieve daily active retention.
+    \item \textbf{Failure of Traditional Vision Models on Cluttered Environments:} Off-the-shelf single-label image classifiers can identify a pristine photograph of an apple, but fail completely when confronted with real-world refrigerator shelves containing milk cartons, bagged spinach, bell peppers, jars of sauces, and eggs with varying orientations and shadows.
+    \item \textbf{Static, Inflexible Recipe Retrieval:} Traditional databases offer binary matching: either a user possesses 100\% of the ingredients or the recipe is omitted. In reality, skilled cooking is fundamentally adaptive—butter can substitute for ghee, yogurt can replace cream, and mushrooms can stand in for zucchini. Without algorithmic substitution guidance, home cooks discard recipes prematurely.
+    \item \textbf{Ephemeral State Loss in Serverless Clouds:} Serverless deployments on modern edge networks (such as Vercel) scale down to zero when idle. Without an intentional client-state synchronization layer, users frequently lose their pantry inventories and cooking histories upon page reloads or cold starts.
+\end{enumerate}
+
+The formal problem statement is therefore articulated as:
+\begin{quote}
+\textit{“To eliminate the cognitive and technical barriers of domestic food management by developing an intelligent web system that visually detects multi-item refrigerator provisions in real time, applies context-driven generative reasoning to tailor recipes, algorithmically resolves missing ingredient dependencies, and provides an end-to-end interactive cooking experience resilient to cloud cold starts.”}
+\end{quote}
+
+\section{Motivation and Socio-Economic Significance}
+The significance of PlateWise operates at both individual and macroeconomic scales:
+\begin{itemize}
+    \item \textbf{Household Economic Savings:} The average urban household discards an estimated \$1,500 to \$2,200 worth of edible food annually. By maximizing pantry utilization before purchasing additional groceries, PlateWise delivers measurable financial savings.
+    \item \textbf{Environmental Impact \& Methane Mitigation:} Food waste decomposing in municipal landfills is responsible for approximately 8\% to 10\% of total global greenhouse gas emissions. Preventing domestic food spoilage directly curtails organic waste landfill contributions.
+    \item \textbf{Promoting Wholesome Nutrition:} By removing the friction of recipe ideation, PlateWise encourages home cooking of fresh vegetables and unprocessed ingredients over highly processed commercial takeout meals.
+\end{itemize}
+
+\section{Goals and Objectives}
+The central goal of the project is to build an intelligent digital ecosystem that automates kitchen inventory perception, recipe discovery, ingredient substitution, and cooking guidance into a seamless five-stage pipeline.
+
+\subsection*{Specific Measurable Objectives}
+\begin{enumerate}
+    \item \textbf{Zero-Friction Ingestion:} Build an intuitive dropzone supporting drag-and-drop, native device camera uploads, and 1-click multi-ingredient demo presets.
+    \item \textbf{Sub-2-Second Multi-Modal Inference:} Achieve multi-ingredient detection of up to 16+ items with inference latencies under 2.0 seconds via Groq's high-speed LPU infrastructure.
+    \item \textbf{Candidate Fallback Resilience:} Implement an automated model fallback chain (\texttt{qwen/qwen3.8-27b} $\rightarrow$ \texttt{llama-4-scout} $\rightarrow$ \texttt{llama-3.2-11b-vision}) ensuring 99.9\% vision API uptime.
+    \item \textbf{Multi-Dimensional Recipe Personalization:} Enable users to filter recipes across 3 meal times, 3 seasons, and multiple cultural cuisine vectors, synthesized via large language model reasoning (\texttt{openai/gpt-oss-120b}).
+    \item \textbf{Quantitative Audit \& Replacement Logic:} Calculate exact pantry match percentages and generate context-appropriate culinary substitutions for missing ingredients.
+    \item \textbf{Integrated Multi-Media Culinary Guidance:} Provide real-time embedded YouTube masterclass cooking tutorials linked dynamically to the selected recipe title, alongside interactive step-by-step checklists.
+    \item \textbf{Dual-Tier State Persistence:} Maintain an offline-resilient digital recipe vault synchronized across serverless API endpoints and browser \texttt{localStorage}.
+\end{enumerate}
+
+\section{Scope of the Project}
+
+\subsection*{Functional Scope}
+The functional scope encompasses the entire domestic food lifecycle:
+\begin{itemize}
+    \item \textbf{Stage 1 (Scan):} File processing, canvas compression, vision inference, inventory editing (add/remove/search across 70+ categorized staples).
+    \item \textbf{Stage 2 (Suggest):} Context filtering (Breakfast, Lunch, Dinner; Monsoon, Summer, Winter; Indian Comfort, Continental, etc.), generative LLM reasoning, recipe card rendering.
+    \item \textbf{Stage 3 (Audit):} Ingredient reconciliation, missing ingredient detection, substitution reasoning, surplus utilization advice.
+    \item \textbf{Stage 4 (Cook):} Dynamic video tutorial embedding, step check-off state management, preparation time monitoring.
+    \item \textbf{Stage 5 (Vault):} Prepared meal logging, persistent storage, and one-click “Cook Again” re-triggering.
+\end{itemize}
+
+\subsection*{Non-Functional Scope}
+\begin{itemize}
+    \item \textbf{Performance:} Total frontend bundle size under 450 KB gzipped; client-side canvas downscaling under 100ms; vision inference latency under 1.5s.
+    \item \textbf{Security \& Privacy:} Strict client-side downscaling; zero storage of raw user photos on cloud disks; sanitized API tokens isolated in serverless environment variables.
+    \item \textbf{Cross-Platform Responsiveness:} Fully adaptive fluid layouts across mobile smartphones (iOS/Android), tablets, and high-resolution desktop displays.
+    \item \textbf{Cost Optimization:} $100\%$ zero-cost operation on public cloud infrastructure (Vercel Hobby Tier and Groq Developer Free Tier).
+\end{itemize}
+
+\section{Target User Personas}
+The system is tailored for three primary user segments:
+\begin{enumerate}
+    \item \textbf{University Students \& Roommates:} Individuals living in dormitories or shared apartments with unpredictable grocery supplies who require quick, budget-friendly meal ideas from miscellaneous staples.
+    \item \textbf{Busy Working Professionals:} Individuals experiencing decision fatigue after long working hours who desire rapid, 20-minute recipes based on whatever is immediately available in the fridge.
+    \item \textbf{Eco-Conscious Households:} Families striving to minimize domestic grocery expenditure and eliminate avoidable organic food spoilage.
+\end{enumerate}
