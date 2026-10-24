@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "description": "AI-powered fridge-to-recipe web app with Groq Vision and LLM",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
     "dev:backend": "node --watch backend/server.js",
-    "dev:frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm install && npm run build",
-    "dev": "cd frontend && npm run dev",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "dev": "npm run dev --prefix frontend",
     "start": "node backend/server.js"
   },
   "dependencies": {
