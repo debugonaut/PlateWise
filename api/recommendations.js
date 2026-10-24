@@ -95,6 +95,14 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.GROQ_API_KEY;
   if (apiKey) {
+    const candidateModels = [
+      process.env.GROQ_MODEL,
+      'openai/gpt-oss-120b',
+      'qwen/qwen3.8-27b',
+      'llama-3.3-70b-versatile',
+      'llama3-70b-8192',
+    ].filter(Boolean);
+
     try {
       const groq = new Groq({ apiKey });
       const prompt = `You are PlateWise, an elite culinary chef AI.
@@ -124,19 +132,34 @@ Return ONLY valid JSON:
   ]
 }`;
 
-      const response = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: 'llama-3.3-70b-versatile',
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      });
+      for (const model of candidateModels) {
+        try {
+          const response = await groq.chat.completions.create({
+            messages: [{ role: 'user', content: prompt }],
+            model,
+            response_format: { type: 'json_object' },
+            temperature: 0.7,
+          });
 
-      const parsed = JSON.parse(response.choices[0].message.content);
-      if (parsed.recommendations?.length > 0) {
-        return res.json({ success: true, source: 'groq-ai', data: parsed.recommendations });
+          const raw = response.choices?.[0]?.message?.content?.trim() || '';
+          const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
+
+          if (parsed.recommendations?.length > 0) {
+            return res.json({
+              success: true,
+              source: 'groq-ai',
+              model,
+              data: parsed.recommendations,
+            });
+          }
+        } catch (modelErr) {
+          console.warn(`[Recommendations API] Model ${model} failed:`, modelErr.message);
+        }
       }
     } catch (err) {
-      console.error('Groq error:', err.message);
+      console.error('Groq client error:', err.message);
     }
   }
 

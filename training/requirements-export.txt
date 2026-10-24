@@ -1,0 +1,16 @@
+# Export env A -- ONNX -> TensorFlow SavedModel. Requires Python >= 3.12.
+#
+# Kept out of the training environment on purpose: onnx2tf pins its own
+# TensorFlow build and needs a newer Python than the training stack does.
+#
+#   python3.12 -m venv .venv-onnx2tf
+#   .venv-onnx2tf/bin/pip install -r requirements-export.txt
+#
+# Then hand the executable to the exporter:
+#   python3 scripts/export_tfjs.py --onnx2tf .venv-onnx2tf/bin/onnx2tf \
+#                                  --tfjs-converter .venv-tfjs/bin/tensorflowjs_converter
+#
+# See requirements-tfjs.txt for env B (SavedModel -> TFJS), which must be a
+# separate virtualenv because the two disagree about the TensorFlow version.
+
+onnx2tf[tensorflow]==2.6.9

@@ -103,31 +103,54 @@ export default function StepVault({ onCookAgain }) {
   const [recipes, setRecipes] = useState(SEEDED_VAULT_RECIPES);
 
   useEffect(() => {
+    // Read local cache first for instant display
+    let localItems = [];
+    try {
+      localItems = JSON.parse(localStorage.getItem('platewise_vault') || '[]');
+    } catch {}
+
+    const formatEntry = (item) => ({
+      id: item.id || `vault-${Date.now()}-${Math.random()}`,
+      title: item.title,
+      culture: 'Saved Dish',
+      cookedAt: new Date(item.cookedAt).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      prepTime: '20m',
+      rating: item.rating || 5,
+      image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80',
+      description: 'Custom recipe saved from your active cooking session.',
+      ingredients: [{ name: 'Core Ingredients', amount: 'In Stock' }],
+      steps: ['Followed step-by-step guidance.'],
+    });
+
     fetch('/api/vault')
       .then((res) => res.json())
       .then((json) => {
-        if (json.success && json.data && json.data.length > 0) {
-          const formatted = json.data.map((item) => ({
-            id: item.id,
-            title: item.title,
-            culture: 'Saved Dish',
-            cookedAt: new Date(item.cookedAt).toLocaleDateString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            prepTime: '20m',
-            rating: item.rating || 5,
-            image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80',
-            description: 'Custom recipe saved from your active cooking session.',
-            ingredients: [{ name: 'Core Ingredients', amount: 'In Stock' }],
-            steps: ['Followed step-by-step guidance.']
-          }));
-          setRecipes([...formatted, ...SEEDED_VAULT_RECIPES]);
+        const remoteItems = json.success && Array.isArray(json.data) ? json.data : [];
+        const combined = [...remoteItems, ...localItems];
+        // Deduplicate by title + cookedAt
+        const seen = new Set();
+        const unique = [];
+        for (const item of combined) {
+          const key = `${item.title}-${item.cookedAt}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(formatEntry(item));
+          }
+        }
+        if (unique.length > 0) {
+          setRecipes([...unique, ...SEEDED_VAULT_RECIPES]);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (localItems.length > 0) {
+          setRecipes([...localItems.map(formatEntry), ...SEEDED_VAULT_RECIPES]);
+        }
+      });
   }, []);
 
   useEffect(() => {

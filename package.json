@@ -7,9 +7,14 @@
   "scripts": {
     "dev:backend": "node --watch backend/server.js",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "cd frontend && npm install && npm run build"
+    "build": "cd frontend && npm install && npm run build",
+    "dev": "cd frontend && npm run dev",
+    "start": "node backend/server.js"
   },
   "dependencies": {
     "groq-sdk": "^1.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

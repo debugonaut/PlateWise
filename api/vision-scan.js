@@ -14,7 +14,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { image } = req.body;
+  const { image } = req.body || {};
 
   if (!image) {
     return res.status(400).json({ success: false, message: 'Image is required (base64 data URL)' });
@@ -23,22 +23,32 @@ export default async function handler(req, res) {
   const apiKey = process.env.GROQ_API_KEY;
 
   if (apiKey) {
+    const candidateModels = [
+      process.env.GROQ_VISION_MODEL,
+      'qwen/qwen3.8-27b',
+      'meta-llama/llama-4-scout-17b-16e-instruct',
+      'llama-3.2-11b-vision-preview',
+      'llama-3.2-90b-vision-preview',
+    ].filter(Boolean);
+
     try {
       const groq = new Groq({ apiKey });
 
-      const response = await groq.chat.completions.create({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-        messages: [
-          {
-            role: 'user',
-            content: [
+      for (const model of candidateModels) {
+        try {
+          const response = await groq.chat.completions.create({
+            model,
+            messages: [
               {
-                type: 'image_url',
-                image_url: { url: image },
-              },
-              {
-                type: 'text',
-                text: `You are a professional culinary vision AI. Analyze this image of a fridge, pantry, kitchen counter, or grocery haul.
+                role: 'user',
+                content: [
+                  {
+                    type: 'image_url',
+                    image_url: { url: image },
+                  },
+                  {
+                    type: 'text',
+                    text: `You are a professional culinary vision AI. Analyze this image of a fridge, pantry, kitchen counter, or grocery haul.
 
 Identify ALL visible food ingredients and return them as a JSON array. Be specific about each item.
 
@@ -52,24 +62,33 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 
 Categories to use: Produce, Dairy, Proteins & Nuts, Oils & Sauces, Grains & Pulses, Spices, Frozen.
 If you cannot detect food clearly, return an empty ingredients array.`,
+                  },
+                ],
               },
             ],
-          },
-        ],
-        temperature: 0.2,
-        max_tokens: 800,
-      });
+            temperature: 0.2,
+            max_tokens: 800,
+          });
 
-      const raw = response.choices[0].message.content.trim();
-      // Strip markdown fences if present
-      const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(cleaned);
+          const raw = response.choices?.[0]?.message?.content?.trim() || '';
+          const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
 
-      if (parsed.ingredients && parsed.ingredients.length > 0) {
-        return res.json({ success: true, source: 'groq-vision', data: parsed.ingredients });
+          if (parsed.ingredients && parsed.ingredients.length > 0) {
+            return res.json({
+              success: true,
+              source: 'groq-vision',
+              model,
+              data: parsed.ingredients,
+            });
+          }
+        } catch (modelErr) {
+          console.warn(`[Vision API] Model ${model} failed:`, modelErr.message);
+        }
       }
     } catch (err) {
-      console.error('Groq vision error:', err.message);
+      console.error('Groq vision client error:', err.message);
     }
   }
 

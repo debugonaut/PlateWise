@@ -1,0 +1,16 @@
+# Export env B -- SavedModel -> TensorFlow.js graph model.
+#
+# Separate virtualenv from requirements-export.txt: onnx2tf pins a TensorFlow
+# build that the TFJS converter does not agree with, and installing both into one
+# environment resolves to neither. This pair is the conservative combination.
+#
+#   python3.12 -m venv .venv-tfjs
+#   .venv-tfjs/bin/pip install -r requirements-tfjs.txt
+#
+# Neither env is a vendor-tested lockfile. Before shipping a model, confirm that
+# the converter loads the SavedModel it is given and that browser outputs match
+# the PyTorch model on the same images.
+
+tensorflow==2.19.0
+tf-keras==2.19.0
+tensorflowjs==4.22.0

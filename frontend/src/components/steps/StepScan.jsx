@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Camera, Upload, ArrowRight, X, Search, Check } from 'lucide-react';
+import { Camera, Upload, ArrowRight, X, Search, Check, Sparkles } from 'lucide-react';
 import { HOUSEHOLD_INGREDIENTS, INGREDIENT_CATEGORIES } from '../../data/householdIngredients';
+import { DEMO_PHOTOS } from '../../data/demoPhotos';
 
 export default function StepScan({ userInventory, setUserInventory, onNext }) {
   const [loading, setLoading] = useState(false);
@@ -8,18 +9,76 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
   const [scanStatus, setScanStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [isDragging, setIsDragging] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(null);
   const fileInputRef = useRef(null);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
+  // Phone photos are routinely 10-12 MP / 5-8 MB. Sending that raw is slow and
+  // can be rejected by the vision API, so shrink to a sane edge length first.
+  // Images already small enough are passed through untouched.
+  const MAX_EDGE = 1024;
+  const SMALL_ENOUGH_BYTES = 3 * 1024 * 1024;
+
+  const readAndDownscale = (file) =>
+    new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read that file.'));
       reader.onloadend = () => {
-        setPreview(reader.result);
-        runNeuralVisionScan(file, reader.result);
+        const dataUrl = reader.result;
+        const img = new Image();
+        img.onerror = () => reject(new Error('That file is not a readable image.'));
+        img.onload = () => {
+          const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
+          if (scale === 1 && file.size <= SMALL_ENOUGH_BYTES) {
+            resolve({ dataUrl, blob: file });
+            return;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                resolve({ dataUrl, blob: file });
+                return;
+              }
+              const out = new FileReader();
+              out.onloadend = () => resolve({ dataUrl: out.result, blob });
+              out.readAsDataURL(blob);
+            },
+            'image/jpeg',
+            0.9
+          );
+        };
+        img.src = dataUrl;
       };
       reader.readAsDataURL(file);
+    });
+
+  const processFile = async (file) => {
+    if (!file) return;
+    if (!file.type || !file.type.startsWith('image/')) {
+      setScanStatus('That is not an image. Drop a JPG, PNG or WEBP photo.');
+      return;
     }
+
+    setLoading(true);
+    setScanStatus('Preparing photo...');
+    try {
+      const { dataUrl, blob } = await readAndDownscale(file);
+      setPreview(dataUrl);
+      await runNeuralVisionScan(blob, dataUrl);
+    } catch (err) {
+      console.error('Image read error:', err);
+      setScanStatus(err.message || 'Could not read that image.');
+      setLoading(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) processFile(file);
   };
 
   const handleRemovePhoto = (e) => {
@@ -31,37 +90,106 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
     }
   };
 
-  const runNeuralVisionScan = async (file, base64) => {
+  // Demo Mode runs the SAME request as a normal upload -- nothing is stubbed.
+  // The photos were checked against the live model before shipping (see
+  // backend/scripts/build-demo-set.mjs), so the demo shows real inference on
+  // inputs that are known to be in distribution.
+  const runDemoPhoto = async (photo) => {
+    if (loading) return;
+    setDemoBusy(photo.id);
+    setPreview(photo.file);
+    setScanStatus(`Scanning ${photo.label}...`);
+    try {
+      const res = await fetch(photo.file);
+      if (!res.ok) throw new Error(`Could not load ${photo.file}`);
+      const blob = await res.blob();
+      const reader = new FileReader();
+      const dataUrl = await new Promise((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      // Demo scans replace the pantry so the walkthrough starts from a coherent,
+      // predictable state instead of accumulating items between clicks.
+      await runNeuralVisionScan(blob, dataUrl, { replacePantry: true });
+    } catch (err) {
+      console.error('Demo photo error:', err);
+      setScanStatus(err.message || 'Could not load that demo photo.');
+      setLoading(false);
+    } finally {
+      setDemoBusy(null);
+    }
+  };
+
+  const runNeuralVisionScan = async (file, base64, { replacePantry = false } = {}) => {
     setLoading(true);
-    setScanStatus('Running Neural Vision food detection...');
+    setScanStatus('Reading ingredients from your photo...');
 
     try {
-      const formData = new FormData();
-      if (file) {
-        formData.append('image', file);
-      } else {
-        formData.append('image', base64);
+      let imagePayload = typeof base64 === 'string' && base64.startsWith('data:') ? base64 : null;
+      if (!imagePayload && file) {
+        const reader = new FileReader();
+        imagePayload = await new Promise((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      if (!imagePayload) {
+        throw new Error('No valid image data available to scan.');
       }
 
       const res = await fetch('/api/vision-scan', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: imagePayload }),
       });
+      if (!res.ok) {
+        throw new Error(`The scan service returned HTTP ${res.status}.`);
+      }
       const json = await res.json();
 
-      if (json.success && json.data && json.data.length > 0) {
+      // Only real ingredient detections reach the pantry. The backend may also
+      // return a `dish` guess, which this screen deliberately ignores: PlateWise
+      // answers "what can I cook with these", not "what dish is this".
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
         setUserInventory((prev) => {
+          if (replacePantry) return json.data;
           const existingNames = new Set(
             prev.map((i) => (typeof i === 'string' ? i : i.name).toLowerCase())
           );
           const fresh = json.data.filter((d) => !existingNames.has(d.name.toLowerCase()));
           return [...fresh, ...prev];
         });
-        setScanStatus(`AI detected ${json.data.length} ingredients from your photo.`);
+        if (json.source === 'groq-vision') {
+          setScanStatus(
+            `Detected ${json.data.length} ingredient${json.data.length === 1 ? '' : 's'} from your photo.`
+          );
+        } else if (json.source === 'ingredient-model') {
+          // Name the model and its confidence. Saying which reader answered is
+          // the difference between a claim and a measurement.
+          const hit = json.data[0];
+          setScanStatus(`Recognised ${hit.name} (${hit.confidence}% confident).`);
+        } else if (json.message) {
+          // The server told us it fell back, so say so rather than implying a read.
+          setScanStatus(json.message);
+        } else {
+          setScanStatus(`Detected ${json.data.length} ingredient(s) via the offline classifier.`);
+        }
+      } else {
+        // The server distinguishes "read the photo, found no food" from "could not
+        // read the photo", so prefer its wording when it sent one.
+        setScanStatus(
+          json.message ||
+            'No ingredients were recognised. Try a closer, brighter photo or add items manually below.'
+        );
       }
     } catch (err) {
       console.error('Vision scan error:', err);
-      setScanStatus('Scan complete.');
+      setScanStatus(
+        err.message || 'Scan failed. You can add items manually below or try another photo.'
+      );
     } finally {
       setLoading(false);
     }
@@ -103,7 +231,32 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
   return (
     <div className="space-y-8 max-w-3xl mx-auto">
       {/* Upload Zone */}
-      <div className="relative border-2 border-dashed border-neutral-200 hover:border-neutral-400 rounded-3xl p-6 sm:p-8 text-center transition-colors bg-white shadow-xs">
+      <div
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={(e) => {
+          // Ignore drags moving between children of the zone.
+          if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+          const dropped = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+          processFile(dropped);
+        }}
+        className={`relative border-2 border-dashed rounded-3xl p-6 sm:p-8 text-center transition-colors shadow-xs ${
+          isDragging
+            ? 'border-neutral-900 bg-neutral-50 ring-2 ring-neutral-900/10'
+            : 'border-neutral-200 hover:border-neutral-400 bg-white'
+        }`}
+      >
         {preview ? (
           <div className="relative max-h-60 overflow-hidden rounded-2xl mx-auto mb-4 bg-neutral-100 group">
             <img src={preview} alt="Fridge scan preview" className="w-full h-full object-contain max-h-60 mx-auto" />
@@ -130,7 +283,12 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
               <Camera className="w-5 h-5" />
             </div>
             <p className="text-xs font-semibold text-neutral-900">
-              Upload photo of your fridge, pantry, or ingredients
+              {isDragging
+                ? 'Drop the photo to scan it'
+                : 'Drag & drop a photo of your fridge, pantry or groceries'}
+            </p>
+            <p className="text-[11px] font-mono text-neutral-400">
+              JPG, PNG or WEBP — or pick a file below
             </p>
           </div>
         )}
@@ -150,6 +308,52 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
           <Upload className="w-3.5 h-3.5" />
           <span>{preview ? 'Change Photo' : 'Select Photo to Scan'}</span>
         </label>
+
+        {/* Demo Mode: one click, no file picker. Each thumbnail is a real
+            ingredient photo the model was verified on, so a live walkthrough
+            never depends on the room lighting or on finding a good photo in the
+            moment. Real inference still runs on click -- nothing is stubbed. */}
+        {DEMO_PHOTOS.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-neutral-100">
+            <p className="text-[11px] font-mono text-neutral-400 mb-2 inline-flex items-center gap-1.5">
+              <Sparkles className="w-3 h-3" />
+              Or try a demo photo
+            </p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {DEMO_PHOTOS.map((photo) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  onClick={() => runDemoPhoto(photo)}
+                  disabled={loading}
+                  title={`${photo.label} \u2014 verified at ${photo.verifiedConfidence}%`}
+                  className={`group relative w-16 rounded-xl overflow-hidden border transition-all ${
+                    demoBusy === photo.id
+                      ? 'border-neutral-900 ring-2 ring-neutral-900/15'
+                      : 'border-neutral-200 hover:border-neutral-500 hover:-translate-y-0.5'
+                  } ${loading ? 'opacity-60 cursor-wait' : ''}`}
+                >
+                  <img src={photo.file} alt={photo.label} className="w-full h-12 object-cover" />
+                  <span className="block text-[9px] font-mono text-neutral-500 truncate px-1 py-0.5">
+                    {photo.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Scan feedback stays visible after the spinner clears. */}
+        {scanStatus && (!loading || !preview) && (
+          <p
+            className={`mt-3 text-[11px] font-mono ${
+              loading ? 'text-neutral-400' : 'text-neutral-500'
+            }`}
+          >
+            {scanStatus}
+          </p>
+        )}
+
       </div>
 
       {/* Identified / Selected Ingredients */}

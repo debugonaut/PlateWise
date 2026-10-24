@@ -3,12 +3,26 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const multer = require('multer');
 const { Groq } = require('groq-sdk');
-const { pipeline } = require('@xenova/transformers');
+const { pipeline, RawImage } = require('@xenova/transformers');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+// The trained ingredient recogniser (training/ -> ONNX). Optional: if the model
+// or onnxruntime is missing, the server still boots and CLIP carries the scan.
+const { IngredientClassifier } = require('./ingredient-classifier.js');
+const ingredientClassifier = new IngredientClassifier();
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+
+// Some shells export PORT=0, and the string "0" is truthy -- so the original
+// `process.env.PORT || 5001` bound a random ephemeral port while vite.config.js
+// proxies /api to a hardcoded 5001. Every API call then failed with no obvious
+// cause. Only accept a real positive port; otherwise use 5001.
+const parsedPort = Number.parseInt(process.env.PORT ?? '', 10);
+const PORT = Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 5001;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -19,16 +33,18 @@ let activeGroqKey = process.env.GROQ_API_KEY || '';
 let userVault = [];
 let visionPipeline = null;
 
-// Initialize Hugging Face Neural Vision Pipeline in Background
-(async () => {
-  try {
-    console.log('[Vision AI] Loading Neural Zero-Shot Vision Model (CLIP-ViT)...');
+// The CLIP zero-shot model is only a *fallback* for when Groq Vision is
+// unavailable, and it weighs roughly 150 MB. Loading it lazily keeps local
+// startup quick and avoids that download on every `npm run dev:backend` even
+// when a GROQ_API_KEY is configured.
+const loadVisionPipeline = async () => {
+  if (!visionPipeline) {
+    console.log('[Vision AI] Loading fallback CLIP zero-shot model (Xenova/clip-vit-base-patch32)...');
     visionPipeline = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
-    console.log('[Vision AI] Neural Vision Model successfully loaded & ready.');
-  } catch (err) {
-    console.error('[Vision AI] Error loading vision model:', err.message);
+    console.log('[Vision AI] Fallback vision model loaded.');
   }
-})();
+  return visionPipeline;
+};
 
 const getGroqClient = (customKey) => {
   const key = customKey || activeGroqKey || process.env.GROQ_API_KEY;
@@ -37,7 +53,21 @@ const getGroqClient = (customKey) => {
 };
 
 // Candidate Labels for Zero-Shot Food Recognition
-const CANDIDATE_FOOD_LABELS = [
+// ---------------------------------------------------------------------------
+// CLIP zero-shot labels.
+//
+// CLIP scores every phrase here against the image, so the phrase list *is* the
+// model's entire vocabulary -- it can never name anything absent from this list.
+// Two consequences:
+//   1. The list is deliberately broad and includes Indian pantry items, because
+//      the app's own pantry data is Indian-centric.
+//   2. It also includes unrelated "distractor" phrases that are intentionally
+//      absent from LABEL_TO_INGREDIENT. They absorb probability mass so ordinary
+//      photos (a room, a person) do not get scored as food, which is what makes
+//      the "this photo has no ingredients" answer meaningful.
+// ---------------------------------------------------------------------------
+const FOOD_LABELS = [
+  // Produce -- shared
   'fresh red tomatoes',
   'yellow or red onions',
   'raw potatoes',
@@ -56,73 +86,316 @@ const CANDIDATE_FOOD_LABELS = [
   'yellow lemon or lime',
   'purple eggplant brinjal',
   'mushrooms',
-  'sliced white mushrooms',
   'fresh green zucchini courgette',
   'fresh green beans',
   'fresh green parsley leaves',
   'fresh mint leaves',
   'fresh green salad lettuce',
-  'olive oil bottle',
+  'spring onions scallions',
+  'curry leaves',
+  'fenugreek leaves methi',
+  // Produce -- Indian / regional
+  'bitter gourd karela',
+  'bottle gourd lauki',
+  'okra ladyfinger bhindi',
+  'drumstick moringa pods',
+  'taro root arbi colocasia',
+  'raw banana plantain',
+  'round gourd tinda',
+  'jackfruit',
+  'sweet potato',
+  'beetroot',
+  'white radish daikon',
+  'pumpkin',
+  'sweet corn cob',
+  'fresh coconut',
+  'tamarind pods',
+  // Produce -- fruit
+  'ripe mangoes',
+  'bananas',
+  'red apples',
+  'oranges',
+  'grapes',
+  'pomegranate',
+  'watermelon',
+  'guava',
+  'papaya',
+  'pineapple',
+  'strawberries',
+  'blueberries',
+  'avocado',
+  'peaches',
+  // Dairy
   'paneer cottage cheese cubes',
   'butter block',
   'clarified butter ghee',
   'milk bottle carton',
   'yogurt curd dahi bowl',
-  'cheese cheddar mozzarella',
+  'heavy cream',
+  'cheddar cheese block',
+  'mozzarella cheese',
   'tofu block',
-  'chicken meat poultry',
-  'eggs carton',
-  'pasta macaroni noodles',
-  'steamed basmati rice',
-  'bread slices',
-  'yellow lentils moong dal',
-  'red lentils masoor dal',
+  'coconut milk can',
+  // Grains & Pulses
+  'cooked basmati rice',
+  'wheat flour atta',
+  'all purpose flour maida',
+  'besan gram flour',
+  'penne macaroni pasta',
+  'spaghetti noodles',
+  'poha flattened rice',
+  'rava sooji semolina',
+  'rolled oats',
+  'bread slices loaf',
+  'yellow moong dal',
+  'toor arhar dal',
+  'chana dal split chickpeas',
+  'masoor dal red lentils',
+  'urad dal black gram',
+  'chickpeas chole',
   'kidney beans rajma',
-  'chickpeas chole'
+  'idli dosa batter',
+  // Spices
+  'cumin seeds jeera',
+  'mustard seeds rai',
+  'turmeric powder',
+  'red chili powder',
+  'coriander powder',
+  'garam masala',
+  'dried fenugreek leaves kasuri methi',
+  'chaat masala',
+  'asafoetida hing',
+  'black pepper peppercorns',
+  'oregano and chili flakes',
+  'cardamom and cinnamon sticks',
+  'bay leaves',
+  'cloves',
+  'salt',
+  // Oils & Sauces
+  'cooking oil bottle',
+  'olive oil bottle',
+  'soy sauce bottle',
+  'vinegar bottle',
+  'tomato ketchup bottle',
+  'red chili sauce bottle',
+  'mayonnaise jar',
+  'honey jar',
+  'peanut butter jar',
+  // Proteins & Nuts
+  'raw eggs carton',
+  'raw chicken meat',
+  'peanuts groundnuts',
+  'cashews and almonds',
+  'fish fillets',
+  'prawns shrimp',
+  'raw mutton red meat',
+  // Frozen
+  'frozen peas packet',
+  'ice cream tub',
+  // Distractors -- deliberately unmapped. These exist so non-food photos score
+  // here instead of inflating a real ingredient label.
+  'an empty room with a wall',
+  'a person posing for a photo',
+  'a car parked on a street',
+  'a smartphone on a desk',
+  'a laptop computer',
+  'a printed document or receipt',
+  'folded clothing',
+  'a dog or a cat',
+  'a houseplant on a windowsill',
+  'a kitchen sink with dirty dishes',
+  'an empty plate on a table',
+  'a cookbook cover',
+  'the sky and clouds',
+  'a stack of books',
 ];
 
+const ingredient = (name, category) => ({ name, category });
+
+// Every food label above maps to a canonical name. Names reuse the app's own
+// pantry vocabulary (frontend/src/data/householdIngredients.js) wherever one
+// exists, so a detected chip feeds straight into the ingredient audit step.
 const LABEL_TO_INGREDIENT = {
-  'fresh red tomatoes': { name: 'Tomatoes', category: 'Produce' },
-  'yellow or red onions': { name: 'Onions', category: 'Produce' },
-  'raw potatoes': { name: 'Potatoes', category: 'Produce' },
-  'garlic cloves and bulbs': { name: 'Garlic', category: 'Produce' },
-  'fresh ginger root': { name: 'Ginger', category: 'Produce' },
-  'green chili peppers': { name: 'Green Chilies', category: 'Produce' },
-  'bell peppers capsicum': { name: 'Bell Peppers / Capsicum', category: 'Produce' },
-  'orange carrots': { name: 'Carrots', category: 'Produce' },
-  'fresh green coriander cilantro': { name: 'Coriander / Cilantro', category: 'Produce' },
-  'fresh green parsley leaves': { name: 'Fresh Parsley', category: 'Produce' },
-  'fresh mint leaves': { name: 'Mint Leaves', category: 'Produce' },
-  'fresh green salad lettuce': { name: 'Lettuce / Salad Greens', category: 'Produce' },
-  'fresh green zucchini courgette': { name: 'Zucchini', category: 'Produce' },
-  'fresh green beans': { name: 'Green Beans', category: 'Produce' },
-  'spinach palak greens': { name: 'Spinach / Palak', category: 'Produce' },
-  'fresh cauliflower': { name: 'Cauliflower', category: 'Produce' },
-  'cabbage': { name: 'Cabbage', category: 'Produce' },
-  'green broccoli': { name: 'Broccoli', category: 'Produce' },
-  'green peas': { name: 'Green Peas', category: 'Produce' },
-  'sliced cucumber': { name: 'Cucumber', category: 'Produce' },
-  'yellow lemon or lime': { name: 'Lemon / Lime', category: 'Produce' },
-  'purple eggplant brinjal': { name: 'Eggplant / Brinjal', category: 'Produce' },
-  'mushrooms': { name: 'Mushrooms', category: 'Produce' },
-  'sliced white mushrooms': { name: 'Mushrooms', category: 'Produce' },
-  'olive oil bottle': { name: 'Olive Oil', category: 'Oils & Sauces' },
-  'paneer cottage cheese cubes': { name: 'Paneer', category: 'Dairy' },
-  'butter block': { name: 'Butter', category: 'Dairy' },
-  'clarified butter ghee': { name: 'Ghee', category: 'Dairy' },
-  'milk bottle carton': { name: 'Milk', category: 'Dairy' },
-  'yogurt curd dahi bowl': { name: 'Yogurt / Curd', category: 'Dairy' },
-  'cheese cheddar mozzarella': { name: 'Cheese (Cheddar/Mozzarella)', category: 'Dairy' },
-  'tofu block': { name: 'Tofu', category: 'Dairy' },
-  'chicken meat poultry': { name: 'Chicken Breast', category: 'Proteins & Nuts' },
-  'eggs carton': { name: 'Eggs', category: 'Proteins & Nuts' },
-  'pasta macaroni noodles': { name: 'Pasta', category: 'Grains & Pulses' },
-  'steamed basmati rice': { name: 'Basmati Rice', category: 'Grains & Pulses' },
-  'bread slices': { name: 'Bread Slices', category: 'Grains & Pulses' },
-  'yellow lentils moong dal': { name: 'Yellow Moong Dal', category: 'Grains & Pulses' },
-  'red lentils masoor dal': { name: 'Masoor Dal', category: 'Grains & Pulses' },
-  'kidney beans rajma': { name: 'Kidney Beans / Rajma', category: 'Grains & Pulses' },
-  'chickpeas chole': { name: 'Chickpeas / Chole', category: 'Grains & Pulses' }
+  // Produce
+  'fresh red tomatoes': ingredient('Tomatoes', 'Produce'),
+  'yellow or red onions': ingredient('Onions', 'Produce'),
+  'raw potatoes': ingredient('Potatoes', 'Produce'),
+  'garlic cloves and bulbs': ingredient('Garlic', 'Produce'),
+  'fresh ginger root': ingredient('Ginger', 'Produce'),
+  'green chili peppers': ingredient('Green Chilies', 'Produce'),
+  'bell peppers capsicum': ingredient('Bell Peppers / Capsicum', 'Produce'),
+  'orange carrots': ingredient('Carrots', 'Produce'),
+  'fresh green coriander cilantro': ingredient('Coriander / Cilantro', 'Produce'),
+  'spinach palak greens': ingredient('Spinach / Palak', 'Produce'),
+  'fresh cauliflower': ingredient('Cauliflower', 'Produce'),
+  'cabbage': ingredient('Cabbage', 'Produce'),
+  'green broccoli': ingredient('Broccoli', 'Produce'),
+  'green peas': ingredient('Green Peas', 'Produce'),
+  'sliced cucumber': ingredient('Cucumber', 'Produce'),
+  'yellow lemon or lime': ingredient('Lemon / Lime', 'Produce'),
+  'purple eggplant brinjal': ingredient('Eggplant / Brinjal', 'Produce'),
+  'mushrooms': ingredient('Mushrooms', 'Produce'),
+  'fresh green zucchini courgette': ingredient('Zucchini', 'Produce'),
+  'fresh green beans': ingredient('Green Beans', 'Produce'),
+  'fresh green parsley leaves': ingredient('Fresh Parsley', 'Produce'),
+  'fresh mint leaves': ingredient('Mint Leaves', 'Produce'),
+  'fresh green salad lettuce': ingredient('Lettuce / Salad Greens', 'Produce'),
+  'spring onions scallions': ingredient('Spring Onions', 'Produce'),
+  'curry leaves': ingredient('Curry Leaves', 'Produce'),
+  'fenugreek leaves methi': ingredient('Fenugreek / Methi', 'Produce'),
+  // Produce -- Indian / regional, which the app's own pantry data leads with
+  'bitter gourd karela': ingredient('Bitter Gourd / Karela', 'Produce'),
+  'bottle gourd lauki': ingredient('Bottle Gourd / Lauki', 'Produce'),
+  'okra ladyfinger bhindi': ingredient('Okra / Bhindi', 'Produce'),
+  'drumstick moringa pods': ingredient('Drumstick / Moringa', 'Produce'),
+  'taro root arbi colocasia': ingredient('Colocasia / Arbi', 'Produce'),
+  'raw banana plantain': ingredient('Raw Banana / Plantain', 'Produce'),
+  'round gourd tinda': ingredient('Tinda / Round Gourd', 'Produce'),
+  'jackfruit': ingredient('Jackfruit', 'Produce'),
+  'sweet potato': ingredient('Sweet Potato', 'Produce'),
+  'beetroot': ingredient('Beetroot', 'Produce'),
+  'white radish daikon': ingredient('Radish', 'Produce'),
+  'pumpkin': ingredient('Pumpkin', 'Produce'),
+  'sweet corn cob': ingredient('Sweet Corn', 'Produce'),
+  'fresh coconut': ingredient('Fresh Coconut', 'Produce'),
+  'tamarind pods': ingredient('Tamarind', 'Produce'),
+  // Produce -- fruit (the app's category set has no separate fruit bucket)
+  'ripe mangoes': ingredient('Mango', 'Produce'),
+  'bananas': ingredient('Bananas', 'Produce'),
+  'red apples': ingredient('Apples', 'Produce'),
+  'oranges': ingredient('Oranges', 'Produce'),
+  'grapes': ingredient('Grapes', 'Produce'),
+  'pomegranate': ingredient('Pomegranate', 'Produce'),
+  'watermelon': ingredient('Watermelon', 'Produce'),
+  'guava': ingredient('Guava', 'Produce'),
+  'papaya': ingredient('Papaya', 'Produce'),
+  'pineapple': ingredient('Pineapple', 'Produce'),
+  'strawberries': ingredient('Strawberries', 'Produce'),
+  'blueberries': ingredient('Blueberries', 'Produce'),
+  'avocado': ingredient('Avocado', 'Produce'),
+  'peaches': ingredient('Peaches', 'Produce'),
+  // Dairy
+  'paneer cottage cheese cubes': ingredient('Paneer', 'Dairy'),
+  'butter block': ingredient('Butter', 'Dairy'),
+  'clarified butter ghee': ingredient('Ghee', 'Dairy'),
+  'milk bottle carton': ingredient('Milk', 'Dairy'),
+  'yogurt curd dahi bowl': ingredient('Yogurt / Curd', 'Dairy'),
+  'heavy cream': ingredient('Heavy Cream', 'Dairy'),
+  'cheddar cheese block': ingredient('Cheese (Cheddar/Processed)', 'Dairy'),
+  'mozzarella cheese': ingredient('Mozzarella Cheese', 'Dairy'),
+  'tofu block': ingredient('Tofu', 'Dairy'),
+  'coconut milk can': ingredient('Coconut Milk', 'Dairy'),
+  // Grains & Pulses
+  'cooked basmati rice': ingredient('Basmati Rice', 'Grains & Pulses'),
+  'wheat flour atta': ingredient('Wheat Flour (Atta)', 'Grains & Pulses'),
+  'all purpose flour maida': ingredient('All-Purpose Flour (Maida)', 'Grains & Pulses'),
+  'besan gram flour': ingredient('Besan (Gram Flour)', 'Grains & Pulses'),
+  'penne macaroni pasta': ingredient('Penne / Macaroni Pasta', 'Grains & Pulses'),
+  'spaghetti noodles': ingredient('Spaghetti / Noodles', 'Grains & Pulses'),
+  'poha flattened rice': ingredient('Poha (Flattened Rice)', 'Grains & Pulses'),
+  'rava sooji semolina': ingredient('Rava / Sooji (Semolina)', 'Grains & Pulses'),
+  'rolled oats': ingredient('Rolled Oats', 'Grains & Pulses'),
+  'bread slices loaf': ingredient('Bread Slices', 'Grains & Pulses'),
+  'yellow moong dal': ingredient('Yellow Moong Dal', 'Grains & Pulses'),
+  'toor arhar dal': ingredient('Toor / Arhar Dal', 'Grains & Pulses'),
+  'chana dal split chickpeas': ingredient('Chana Dal', 'Grains & Pulses'),
+  'masoor dal red lentils': ingredient('Masoor Dal (Red Lentils)', 'Grains & Pulses'),
+  'urad dal black gram': ingredient('Urad Dal', 'Grains & Pulses'),
+  'chickpeas chole': ingredient('Chickpeas / Chole', 'Grains & Pulses'),
+  'kidney beans rajma': ingredient('Kidney Beans / Rajma', 'Grains & Pulses'),
+  'idli dosa batter': ingredient('Idli / Dosa Batter', 'Grains & Pulses'),
+  // Spices
+  'cumin seeds jeera': ingredient('Cumin Seeds (Jeera)', 'Spices'),
+  'mustard seeds rai': ingredient('Mustard Seeds (Rai)', 'Spices'),
+  'turmeric powder': ingredient('Turmeric Powder', 'Spices'),
+  'red chili powder': ingredient('Red Chili Powder', 'Spices'),
+  'coriander powder': ingredient('Coriander Powder', 'Spices'),
+  'garam masala': ingredient('Garam Masala', 'Spices'),
+  'dried fenugreek leaves kasuri methi': ingredient('Kasuri Methi', 'Spices'),
+  'chaat masala': ingredient('Chaat Masala', 'Spices'),
+  'asafoetida hing': ingredient('Hing (Asafoetida)', 'Spices'),
+  'black pepper peppercorns': ingredient('Black Pepper', 'Spices'),
+  'oregano and chili flakes': ingredient('Oregano & Chili Flakes', 'Spices'),
+  'cardamom and cinnamon sticks': ingredient('Cardamom & Cinnamon', 'Spices'),
+  'bay leaves': ingredient('Bay Leaves', 'Spices'),
+  'cloves': ingredient('Cloves', 'Spices'),
+  'salt': ingredient('Salt', 'Spices'),
+  // Oils & Sauces
+  'cooking oil bottle': ingredient('Cooking Oil', 'Oils & Sauces'),
+  'olive oil bottle': ingredient('Olive Oil', 'Oils & Sauces'),
+  'soy sauce bottle': ingredient('Soy Sauce', 'Oils & Sauces'),
+  'vinegar bottle': ingredient('Vinegar', 'Oils & Sauces'),
+  'tomato ketchup bottle': ingredient('Tomato Ketchup', 'Oils & Sauces'),
+  'red chili sauce bottle': ingredient('Green / Red Chili Sauce', 'Oils & Sauces'),
+  'mayonnaise jar': ingredient('Mayonnaise', 'Oils & Sauces'),
+  'honey jar': ingredient('Honey', 'Oils & Sauces'),
+  'peanut butter jar': ingredient('Peanut Butter', 'Oils & Sauces'),
+  // Proteins & Nuts
+  'raw eggs carton': ingredient('Eggs', 'Proteins & Nuts'),
+  'raw chicken meat': ingredient('Chicken Breast / Curry Cut', 'Proteins & Nuts'),
+  'peanuts groundnuts': ingredient('Peanuts / Groundnuts', 'Proteins & Nuts'),
+  'cashews and almonds': ingredient('Cashews & Almonds', 'Proteins & Nuts'),
+  'fish fillets': ingredient('Fish', 'Proteins & Nuts'),
+  'prawns shrimp': ingredient('Prawns / Shrimp', 'Proteins & Nuts'),
+  'raw mutton red meat': ingredient('Mutton / Red Meat', 'Proteins & Nuts'),
+  // Frozen
+  'frozen peas packet': ingredient('Frozen Peas', 'Frozen'),
+  'ice cream tub': ingredient('Ice Cream', 'Frozen'),
+};
+
+// Thresholds for turning ranked CLIP predictions into a short, defensible list.
+//
+// Calibrated against real photos rather than guessed: food images produced a top
+// label between 0.17 and 0.71, while a landscape photo topped out at 0.04. That
+// gap is what makes 0.06 a usable floor. The relative floor matters because CLIP
+// spreads softmax mass across every candidate, so a 3-5% label is noise rather
+// than a detection -- without it, any image returns a full list of wrong items.
+const MIN_SCORE = 0.06;       // nothing below this is ever reported
+const RELATIVE_FLOOR = 0.10;  // ...nor anything below 10% of the top score
+const MAX_ITEMS = 6;          // a fridge photo rarely shows more than a handful
+const DISTRACTOR_CONFIDENCE = 0.3; // above this, treat "not food" as the answer
+
+// @xenova/transformers' RawImage.fromURL() goes through fetch(), which cannot
+// read a base64 data: URL and fails with "404 Not Found". Writing the bytes to a
+// temp file and passing the path is what actually works under Node.
+const materialiseImage = (imageSource) => {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/.exec(imageSource);
+  if (!match) return imageSource; // already a local path or an http(s) URL
+  const extension = match[1].split('/')[1].replace('jpeg', 'jpg');
+  const file = path.join(
+    os.tmpdir(),
+    `platewise-scan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+  );
+  fs.writeFileSync(file, Buffer.from(match[2], 'base64'));
+  return file;
+};
+
+const selectIngredients = (predictions) => {
+  if (!predictions || predictions.length === 0) return [];
+
+  // If the single best-matching phrase is a deliberately unrelated distractor,
+  // the photo most likely holds no food -- return nothing rather than guessing.
+  const top = predictions[0];
+  if (!LABEL_TO_INGREDIENT[top.label] && top.score > DISTRACTOR_CONFIDENCE) return [];
+
+  const floor = Math.max(MIN_SCORE, top.score * RELATIVE_FLOOR);
+  const picked = [];
+  const seen = new Set();
+
+  for (const prediction of predictions) {
+    if (prediction.score < floor) break; // results arrive sorted descending
+    const item = LABEL_TO_INGREDIENT[prediction.label];
+    if (!item) continue; // distractor or unmapped -- never leak a raw phrase
+    if (seen.has(item.name)) continue;
+    seen.add(item.name);
+    picked.push({
+      name: item.name,
+      category: item.category,
+      confidence: Math.round(prediction.score * 100),
+    });
+    if (picked.length >= MAX_ITEMS) break;
+  }
+  return picked;
 };
 
 // Fallback high-res recipes tailored to the seeded kitchen inventory
@@ -319,7 +592,75 @@ Return ONLY valid JSON matching:
   });
 });
 
-// 2. High-Accuracy Neural Vision Zero-Shot Food Classifier
+// Open-vocabulary ingredient detection via Groq Vision.
+//
+// This mirrors api/vision-scan.js so the local server and the deployed Vercel
+// function behave the same way. The CLIP zero-shot model below can only ever
+// return a label from FOOD_LABELS, so that phrase list is its entire vocabulary;
+// a hosted vision model has no such limit.
+// Groq no longer serves Llama-4 Scout/Maverick to every account -- calling that
+// model returns 404 model_not_found -- so the model must be named explicitly.
+// Leave GROQ_VISION_MODEL unset (the default) to skip the hosted path entirely
+// and use the local CLIP classifier, which needs no network call and no key.
+// Set it to a genuinely available vision model (e.g. via backend/.env) to prefer
+// hosted open-vocabulary detection.
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || '';
+
+const GROQ_VISION_PROMPT = `You are a professional culinary vision AI. Analyze this image of a fridge, pantry, kitchen counter, or grocery haul.
+
+Identify ALL visible food ingredients and return them as a JSON array. Be specific about each item.
+
+Return ONLY valid JSON (no markdown fences, no extra text):
+{
+  "ingredients": [
+    { "name": "Tomatoes", "category": "Produce", "estimatedQuantity": "4-5 medium" },
+    { "name": "Eggs", "category": "Proteins & Nuts", "estimatedQuantity": "~6" }
+  ]
+}
+
+Categories to use: Produce, Dairy, Proteins & Nuts, Oils & Sauces, Grains & Pulses, Spices, Frozen.
+If you cannot detect food clearly, return an empty ingredients array.`;
+
+const detectWithGroqVision = async (imageSource) => {
+  const groq = getGroqClient();
+  if (!groq) return null;
+
+  const response = await groq.chat.completions.create({
+    model: GROQ_VISION_MODEL,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: imageSource } },
+          { type: 'text', text: GROQ_VISION_PROMPT },
+        ],
+      },
+    ],
+    temperature: 0.2,
+    max_tokens: 800,
+  });
+
+  const raw = response.choices[0].message.content.trim();
+  // Strip markdown fences if the model wrapped the JSON in them (same as api/vision-scan.js).
+  const cleaned = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+  const parsed = JSON.parse(cleaned);
+
+  if (!Array.isArray(parsed.ingredients) || parsed.ingredients.length === 0) return null;
+
+  return parsed.ingredients
+    .filter((item) => item && typeof item.name === 'string' && item.name.trim())
+    .map((item) => ({
+      name: item.name.trim(),
+      category: item.category || 'Produce',
+      estimatedQuantity: item.estimatedQuantity || '',
+    }));
+};
+
+// 2. Vision scan -- Groq Vision (open vocabulary) with a CLIP fallback
 app.post('/api/vision-scan', upload.single('image'), async (req, res) => {
   try {
     let imageSource = null;
@@ -334,66 +675,91 @@ app.post('/api/vision-scan', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Image is required' });
     }
 
-    // If neural pipeline is ready, run deep zero-shot visual classification
-    if (!visionPipeline) {
-      visionPipeline = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32');
+    // OPTIONAL PRIMARY: a hosted vision model, used only when GROQ_VISION_MODEL
+    // names one that this account can actually reach.
+    if (GROQ_VISION_MODEL && (activeGroqKey || process.env.GROQ_API_KEY)) {
+      try {
+        const hosted = await detectWithGroqVision(imageSource);
+        if (hosted && hosted.length > 0) {
+          console.log(`[Vision AI] ${GROQ_VISION_MODEL} detected ${hosted.length} ingredient(s)`);
+          return res.json({ success: true, source: 'groq-vision', data: hosted });
+        }
+        console.log('[Vision AI] Hosted vision model found no food; using local CLIP.');
+      } catch (err) {
+        console.error('Groq vision error, using local CLIP instead:', err.message);
+      }
     }
 
-    const rawPredictions = await visionPipeline(imageSource, CANDIDATE_FOOD_LABELS);
-    console.log('[Vision AI] Top 5 Predictions:', rawPredictions.slice(0, 5));
+    // INGREDIENTS. Two offline readers run over the same temp file, and only
+    // what was actually seen can reach the pantry.
+    //
+    //   1. CLIP zero-shot -- the broad fallback. Covers spices, dairy and
+    //      pantry goods, but it scores the whole image against a phrase list, so
+    //      on a produce photo it often names the wrong single thing.
+    //   2. The trained ingredient recogniser (training/, 35 produce classes,
+    //      88.3% top-1 on its held-out split). Sharper on raw produce, but a
+    //      single-item model, so it is only trusted when it is confident.
+    //
+    // The model wins when it has an answer; CLIP's wider list is the fallback.
+    const localPath = materialiseImage(imageSource);
+    let detected = [];
+    let source = 'clip-local-vision';
+    try {
+      const clip = await loadVisionPipeline();
+      const rawPredictions = await clip(localPath, FOOD_LABELS);
+      console.log(
+        '[Vision AI] Top 5:',
+        rawPredictions.slice(0, 5).map((p) => `${p.score.toFixed(3)} ${p.label}`)
+      );
+      detected = selectIngredients(rawPredictions);
+      console.log(`[Vision AI] CLIP: ${detected.length} ingredient(s):`, detected.map((d) => d.name));
 
-    // Filter predictions with meaningful probability threshold
-    const topMatches = rawPredictions
-      .filter((p) => p.score > 0.04)
-      .slice(0, 7)
-      .map((p) => {
-        const item = LABEL_TO_INGREDIENT[p.label] || { name: p.label, category: 'Produce' };
-        return {
-          name: item.name,
-          category: item.category,
-          confidence: Math.round(p.score * 100)
-        };
-      });
+      try {
+        const classifier = await ingredientClassifier.load();
+        if (classifier) {
+          const { items, full } = await ingredientClassifier.detect(localPath);
+          if (items.length > 0) {
+            detected = items;
+            source = 'ingredient-model';
+            console.log(`[Vision AI] Ingredient model: ${items[0].name} ${items[0].confidence}%`);
+          } else {
+            console.log(
+              `[Vision AI] Ingredient model abstained (best ${full ? full.ranked[0].name : 'n/a'} ` +
+                `${full ? Math.round(full.top1 * 100) : 0}%); keeping CLIP`
+            );
+          }
+        }
+      } catch (err) {
+        // Model trouble must never block a scan; CLIP's answer already stands.
+        console.error('[Vision AI] Ingredient model error (keeping CLIP):', err.message);
+      }
+    } finally {
+      if (localPath !== imageSource) fs.rmSync(localPath, { force: true });
+    }
 
-    const detected = topMatches.length > 0 ? topMatches : [
-      { name: 'Tomatoes', category: 'Produce', confidence: 96 },
-      { name: 'Onions', category: 'Produce', confidence: 94 },
-      { name: 'Garlic', category: 'Produce', confidence: 92 },
-      { name: 'Potatoes', category: 'Produce', confidence: 90 },
-      { name: 'Bell Peppers / Capsicum', category: 'Produce', confidence: 89 },
-      { name: 'Green Beans', category: 'Produce', confidence: 87 },
-      { name: 'Zucchini', category: 'Produce', confidence: 86 },
-      { name: 'Mushrooms', category: 'Produce', confidence: 85 },
-      { name: 'Lettuce / Salad Greens', category: 'Produce', confidence: 82 },
-      { name: 'Fresh Parsley', category: 'Produce', confidence: 81 },
-      { name: 'Mint Leaves', category: 'Produce', confidence: 79 },
-      { name: 'Olive Oil', category: 'Oils & Sauces', confidence: 78 }
-    ];
-
+    // Only ingredients are returned. PlateWise reads a photo to fill a pantry,
+    // and a pantry holds ingredients -- so there is no dish/meal output here at
+    // all: input is ingredients, output is recipes.
     return res.json({
       success: true,
-      source: 'clip-neural-vision',
-      data: detected
+      source,
+      detected: detected.length > 0,
+      data: detected,
+      message: detected.length === 0
+        ? 'No ingredients were recognised in that photo. Try a closer, brighter shot, or type them in below.'
+        : undefined,
     });
   } catch (error) {
     console.error('Vision scan error:', error);
+    // Return nothing rather than a fabricated list. The frontend adds every item
+    // it receives to the pantry, so inventing ingredients here would silently put
+    // food in the user's fridge that was never in the photo.
     return res.json({
-      success: true,
-      source: 'fallback-vision',
-      data: [
-        { name: 'Tomatoes', category: 'Produce' },
-        { name: 'Onions', category: 'Produce' },
-        { name: 'Garlic', category: 'Produce' },
-        { name: 'Potatoes', category: 'Produce' },
-        { name: 'Bell Peppers / Capsicum', category: 'Produce' },
-        { name: 'Green Beans', category: 'Produce' },
-        { name: 'Zucchini', category: 'Produce' },
-        { name: 'Mushrooms', category: 'Produce' },
-        { name: 'Lettuce / Salad Greens', category: 'Produce' },
-        { name: 'Fresh Parsley', category: 'Produce' },
-        { name: 'Mint Leaves', category: 'Produce' },
-        { name: 'Olive Oil', category: 'Oils & Sauces' }
-      ]
+      success: false,
+      source: 'vision-unavailable',
+      detected: false,
+      message: 'The scan could not read that image. Try another photo, or add items manually below.',
+      data: [],
     });
   }
 });

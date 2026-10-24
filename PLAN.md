@@ -71,6 +71,13 @@ platewise/
 ├── backend/                      ← Original Express server (local dev only, NOT deployed)
 │   └── server.js
 │
+├── training/                     ← Offline food-classifier pipeline (Python, not deployed)
+│   ├── platewise_ml/             ← taxonomy, manifest, torch dataset, metrics
+│   ├── scripts/                  ← import_* → build_manifest → train → evaluate → export_tfjs
+│   ├── tests/                    ← synthetic fixture + end-to-end pipeline test
+│   ├── configs/default.json      ← training hyperparameters
+│   └── README.md                 ← how to run it (read this before section 11)
+│
 ├── vercel.json                   ← Build config, rewrites, CORS headers
 ├── package.json                  ← Root: "type": "module", groq-sdk dependency
 ├── .gitignore
@@ -107,13 +114,15 @@ Install these before starting.
 4. Copy the key — it starts with `gsk_...`
 5. Keep it safe — you'll add it to Vercel in Step 7
 
-**Models used by PlateWise:**
+**Models used by PlateWise (with resilient automatic fallback):**
 
-| API function | Model | Purpose |
-|---|---|---|
-| `/api/vision-scan` | `meta-llama/llama-4-scout-17b-16e-instruct` | Food item detection from image |
-| `/api/recommendations` | `llama-3.3-70b-versatile` | Recipe generation |
-| `/api/audit-ingredients` | `llama-3.3-70b-versatile` | Substitution suggestions |
+| API function | Primary / Verified Models | Fallback Chain | Purpose |
+|---|---|---|---|
+| `/api/vision-scan` | `qwen/qwen3.8-27b` | `meta-llama/llama-4-scout-17b-16e-instruct` → `llama-3.2-11b-vision-preview` | Food item detection from image |
+| `/api/recommendations` | `openai/gpt-oss-120b` | `qwen/qwen3.8-27b` → `llama-3.3-70b-versatile` | Context-aware recipe generation |
+| `/api/audit-ingredients` | `openai/gpt-oss-120b` | `qwen/qwen3.8-27b` → `llama-3.3-70b-versatile` | Substitution & surplus advice |
+
+*(If any model is unavailable or encounters rate limits, the next candidate model in the chain is tried automatically before falling back to curated recipes).*
 
 ---
 
@@ -368,12 +377,32 @@ Browser (React SPA)
 
 **The goal**: Train a multi-label image classifier that takes a photo of a fridge/pantry and outputs a list of food items present.
 
+### Availability — verified October 2026
+
+The two most relevant datasets are **not** equally obtainable, and the original
+table glossed over that. Corrections first:
+
+- **Food-101 is downloadable.** The ETH archive is live at
+  `http://data.vision.ee.ethz.ch/cvl/food-101.tar.gz` (~5 GB); both torchvision and
+  TensorFlow Datasets load it from that exact URL. `meta/train.json` and
+  `meta/test.json` inside it are the authoritative 750/250-per-class splits, so
+  `import_food101.py` reads those rather than guessing.
+- **VegFru is not.** Its official download is a Baidu Pan share
+  (`http://pan.baidu.com/s/1boSNcV9`) that now reports itself as expired, and the
+  `ustc-vim/vegfru` GitHub repository holds only HybridNet training code — no
+  `category.txt`, no split files, no images. The mirrors that do exist (~14 GB on
+  Kaggle, ~28 GB on Hugging Face) are third-party redistributions whose licence
+  could not be confirmed from any primary source. **Bring your own copy** and
+  point the importer at it.
+
+The pipeline that implements all of this lives in [`training/`](training/README.md).
+
 ### Recommended datasets (publicly available):
 
 | Dataset | Images | Classes | Best for | Link |
 |---------|--------|---------|---------|------|
-| **Food-101** (ETH Zurich) | 101,000 | 101 cooked dishes | Baseline classifier | [food-101.epfl.ch](https://data.vision.ee.ethz.ch/cvl/food-101.tar.gz) |
-| **VegFru** | 29,200 | 292 vegetables & fruits | Raw produce identification (most relevant) | [GitHub](https://github.com/ustc-vim/vegfru) |
+| **Food-101** (ETH Zurich) | 101,000 | 101 cooked dishes | Baseline classifier — downloadable | [data.vision.ee.ethz.ch](http://data.vision.ee.ethz.ch/cvl/food-101.tar.gz) |
+| **VegFru** | 29,200 | 292 vegetables & fruits | Raw produce identification (most relevant) | ⚠️ official link expired — [bring your own copy](training/README.md) |
 | **ISIA Food-500** | 399,000 | 500 categories | Large-scale fine-grained | [ISIA Lab](http://123.57.42.89/FoodComputing-Dataset/ISIA-Food500) |
 | **iFood-2019** (CVPR) | 251,000 | 251 classes | Competition-grade accuracy | [Kaggle](https://www.kaggle.com/competitions/ifood-2019-fgvc6) |
 | **Open Images v7** (subset) | ~2M total | ~60 food labels | Mixed kitchen scenes | [storage.googleapis.com/openimages](https://storage.googleapis.com/openimages/web/download_v7.html) |
@@ -381,16 +410,41 @@ Browser (React SPA)
 
 ### Recommended training approach for PlateWise use case:
 
-**Architecture**: EfficientNet-B0 or MobileNetV3-Large (small enough for browser inference via TensorFlow.js)
+**Architecture**: MobileNetV3-Large (default) or EfficientNet-B0 — small enough for browser inference via TensorFlow.js.
 
-**Training recipe**:
+**Pipeline** — every stage below is implemented; see [`training/README.md`](training/README.md):
+
+| Stage | Command |
+|-------|---------|
+| Food-101 download + verify + index | `python3 scripts/import_food101.py` |
+| VegFru index (from a local copy) | `python3 scripts/import_vegfru.py --images-dir <path>` |
+| Merge into one multi-label manifest | `python3 scripts/build_manifest.py` |
+| Validate (gates the training run) | `python3 scripts/validate_manifest.py --check-images` |
+| Fine-tune | `python3 scripts/train.py --backbone mobilenet_v3_large` |
+| Score the held-out split | `python3 scripts/evaluate.py --split test` |
+| Export to TF.js | `python3 scripts/export_tfjs.py --quantize float16` |
+
+**Training recipe** (as implemented):
 ```
-1. Pretrain backbone on ImageNet (use torchvision pretrained weights)
-2. Fine-tune on VegFru + Food-101 combined (balance classes with WeightedRandomSampler)
-3. Use multi-label BCE loss (a fridge has many items simultaneously)
-4. Augment: RandomHorizontalFlip, ColorJitter, RandomCrop, MixUp
-5. Export to ONNX → convert to TF.js graph model for browser inference
+1. Start from ImageNet-pretrained torchvision weights; freeze the backbone for
+   small datasets (--freeze-backbone) so the head learns first.
+2. Swap in a multi-label head over the manifest's classes; train with
+   BCEWithLogitsLoss.
+3. Rebalance with per-class pos_weight rather than WeightedRandomSampler: with one
+   head predicting many labels at once, resampling images cannot fix per-class
+   imbalance, but weighting the positive term can.
+4. Augment: RandomResizedCrop, RandomHorizontalFlip, ColorJitter and MixUp.
+5. Lock any official test split (Food-101 ships one) so it is never trained on.
 ```
+
+Two things the original recipe left out. The exported labels can be resolved
+against the app's own pantry list, so a prediction of `Green pea` becomes the
+app's `Green Peas` and carries a category from `FOOD_CATEGORIES` in
+`api/vision-scan.js` — `platewise_ml/taxonomy.py` owns that mapping. And the
+export chain is **not** `tensorflowjs_converter` on an ONNX file: that converter
+cannot read ONNX at all. The working chain is
+PyTorch → ONNX → **onnx2tf** → SavedModel → `tensorflowjs_converter`, where
+onnx2tf needs Python ≥ 3.12 in its own virtualenv.
 
 **Target metrics**:
 - Top-5 accuracy ≥ 85% on VegFru test split
@@ -399,6 +453,16 @@ Browser (React SPA)
 
 **Why not use these in PlateWise right now?**  
 Training + converting + hosting a custom model adds days of work and complexity. The Groq Vision API (Llama 4 Scout) already achieves better contextual accuracy than a fine-tuned classifier because it understands phrases like *"that looks like paneer cut into cubes"* rather than just matching pixels to a fixed class list.
+
+**Status (October 2026)**: the pipeline is scaffolded and its data half is tested;
+no model has been trained yet, so the app still runs entirely on Groq. What exists:
+dataset importers, the unified manifest builder and validator, the fine-tuning and
+export scripts, and an end-to-end test that runs on a synthetic fixture with no
+downloads (`cd training && bash tests/test_pipeline.sh`). What does not exist: a
+trained checkpoint, an exported `.tfjs` model, and the frontend wiring to consume
+one. The `@tensorflow/tfjs`, `@tensorflow-models/mobilenet` and
+`@tensorflow-models/coco-ssd` dependencies in `frontend/package.json` are installed
+but unused — they are where that wiring would go.
 
 ---
 
@@ -410,6 +474,7 @@ Training + converting + hosting a custom model adds days of work and complexity.
 □ cd frontend && npm install
 □ cd backend && npm install
 □ Create platewise/.env with GROQ_API_KEY=gsk_...
+□ (optional) cd training && bash tests/test_pipeline.sh   → data-pipeline self-test, no downloads
 □ node backend/server.js  (terminal 1)
 □ cd frontend && npm run dev  (terminal 2)
 □ Verify app at http://localhost:5188
@@ -417,6 +482,16 @@ Training + converting + hosting a custom model adds days of work and complexity.
 □ Import on vercel.com → add GROQ_API_KEY env var → Deploy
 □ Test /api/recommendations, /api/vision-scan, /api/vault
 □ Smoke test full 5-step flow on live URL
+
+# Optional — train your own food classifier (see training/README.md)
+□ cd training && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+□ bash tests/test_pipeline.sh                          → verifies the pipeline end to end
+□ python3 scripts/import_food101.py --limit-per-class 50   → drop --limit for the full set (~5 GB)
+□ python3 scripts/build_manifest.py
+□ python3 scripts/validate_manifest.py --check-images
+□ python3 scripts/train.py --epochs 8
+□ python3 scripts/evaluate.py --split test
+□ python3 scripts/export_tfjs.py --quantize float16    → needs two extra Python 3.12 envs
 ```
 
 ---

@@ -1,0 +1,10 @@
+# Directories not needed in Vercel production deployment
+training/
+backend/
+.git/
+.venv*/
+__pycache__/
+*.pyc
+*.tar.gz
+*.zip
+.DS_Store

@@ -72,22 +72,34 @@ export default function App() {
   };
 
   const handleCompleteRecipe = async (recipe) => {
+    const entry = {
+      id: `vault-${Date.now()}`,
+      recipeId: recipe.id,
+      title: recipe.title,
+      cookedAt: new Date().toISOString(),
+      rating: 5,
+    };
+
+    // Mirror to localStorage so history survives serverless cold starts
+    try {
+      const existing = JSON.parse(localStorage.getItem('platewise_vault') || '[]');
+      localStorage.setItem('platewise_vault', JSON.stringify([entry, ...existing]));
+    } catch (storageErr) {
+      console.warn('LocalStorage save failed:', storageErr);
+    }
+
     try {
       await fetch('/api/vault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipeId: recipe.id,
-          title: recipe.title,
-          cookedAt: new Date().toISOString(),
-          rating: 5,
-        }),
+        body: JSON.stringify(entry),
       });
-      setCurrentStep(4); // Advance to Saved History (Step 05)
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      console.error('Failed to log to vault:', err);
+      console.error('Failed to log to vault API:', err);
     }
+
+    setCurrentStep(4); // Advance to Saved History (Step 05)
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const stepVariants = {

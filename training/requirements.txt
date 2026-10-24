@@ -1,0 +1,21 @@
+# Training environment -- data prep, fine-tuning and ONNX export.
+#
+# Only scripts/train.py, scripts/evaluate.py, scripts/export_tfjs.py and
+# platewise_ml/datasets.py need these. Everything under scripts/import_*.py,
+# scripts/build_manifest.py, scripts/validate_manifest.py and tests/ runs on the
+# standard library alone.
+#
+# Torch wheels are platform- and Python-version-specific, so these bounds are
+# deliberately loose: let pip resolve the build for your machine.
+#
+#   python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+#
+# Python 3.9 works up to roughly torch 2.7; Python 3.11 or 3.12 is a safer
+# choice if you are starting fresh.
+
+torch>=2.2
+torchvision>=0.17
+pillow>=10.0
+
+# Required by scripts/export_tfjs.py to write and validate the ONNX graph.
+onnx>=1.15

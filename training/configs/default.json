@@ -1,0 +1,12 @@
+{
+  "_comment": "Defaults for scripts/train.py. Any CLI flag overrides the matching key here. Use with --config configs/default.json.",
+  "backbone": "mobilenet_v3_large",
+  "epochs": 12,
+  "batch_size": 32,
+  "lr": 0.001,
+  "weight_decay": 0.0001,
+  "image_size": 224,
+  "mixup_alpha": 0.2,
+  "num_workers": 0,
+  "seed": 1337
+}
