@@ -1,19 +1,11 @@
 # PlateWise 🍳🥗
 > **AI-Driven Fridge-to-Recipe Kitchen Intelligence & Food Waste Mitigation Platform**
 
-**Continuous Assessment (CA) Activity 2 — Individual Full-Stack Mini-Project**  
-**Author:** Aadesh Khande  
-**PRN / Exam Seat No.:** 202401100090  
-**Department:** Software Engineering  
-**Institute:** MIT Academy of Engineering, Alandi (D), Pune  
-**Academic Year:** 2025–2026  
-
 ---
 
 ## 🌐 Live Production Deployment & Links
 - **Production URL:** [https://platewise1705.vercel.app/](https://platewise1705.vercel.app/)
 - **GitHub Repository:** [https://github.com/debugonaut/PlateWise](https://github.com/debugonaut/PlateWise)
-- **Documentation Report:** [202401100090_Aadesh_Khande_PlateWise.pdf](./202401100090_Aadesh_Khande_PlateWise.pdf)
 
 ---
 
@@ -69,8 +61,3 @@ Household food waste accounts for over 60% of global food loss, driven primarily
    ```
    Open `http://localhost:5173` in your browser.
 
----
-
-## 📄 Submission Files
-- `202401100090_Aadesh_Khande_PlateWise.pdf` — Complete academic project report compiled in LaTeX according to the official college format.
-- `202401100090_Aadesh_Khande_PlateWise.zip` — Complete source code package and documentation.
