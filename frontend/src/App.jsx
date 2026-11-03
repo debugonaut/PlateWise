@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Compass, Layers, PlaySquare, Bookmark } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import Lenis from 'lenis';
 
 import Header from './components/Header';
@@ -23,25 +23,11 @@ const STEPS = [
 export default function App() {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedRecipe, setSelectedRecipe] = useState(null);
+  const [demoScenario, setDemoScenario] = useState(null);
 
-  // Seeded kitchen inventory from scanned image
-  const [userInventory, setUserInventory] = useState([
-    { name: 'Tomatoes', category: 'Produce' },
-    { name: 'Onions', category: 'Produce' },
-    { name: 'Garlic', category: 'Produce' },
-    { name: 'Potatoes', category: 'Produce' },
-    { name: 'Bell Peppers / Capsicum', category: 'Produce' },
-    { name: 'Green Beans', category: 'Produce' },
-    { name: 'Zucchini', category: 'Produce' },
-    { name: 'Mushrooms', category: 'Produce' },
-    { name: 'Lettuce / Salad Greens', category: 'Produce' },
-    { name: 'Fresh Parsley', category: 'Produce' },
-    { name: 'Mint Leaves', category: 'Produce' },
-    { name: 'Olive Oil', category: 'Oils & Sauces' },
-    { name: 'Black Pepper', category: 'Spices' },
-    { name: 'Oregano & Chili Flakes', category: 'Spices' },
-    { name: 'Red Chili Powder', category: 'Spices' },
-  ]);
+  // Start empty: the scan step should visibly fill the pantry. A pre-filled
+  // sample made the very first screen look as if a photo had already been read.
+  const [userInventory, setUserInventory] = useState([]);
 
   // Lenis smooth scroll
   useEffect(() => {
@@ -78,6 +64,13 @@ export default function App() {
       title: recipe.title,
       cookedAt: new Date().toISOString(),
       rating: 5,
+      image: recipe.image,
+      culture: recipe.culture,
+      prepTime: recipe.prepTime,
+      difficulty: recipe.difficulty,
+      description: recipe.description,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
     };
 
     // Mirror to localStorage so history survives serverless cold starts
@@ -125,14 +118,18 @@ export default function App() {
           steps={STEPS}
         />
 
-        {/* Animated Step View */}
-        <AnimatePresence mode="wait">
+        {/* Animated Step View -- mount immediately; the old mode="wait" could
+            leave the previous step on screen during a live demo. */}
+        <>
           {currentStep === 0 && (
             <motion.div key="step-scan" variants={stepVariants} initial="initial" animate="animate" exit="exit">
               <StepScan
                 userInventory={userInventory}
                 setUserInventory={setUserInventory}
                 onNext={() => setCurrentStep(1)}
+                onDemoLoad={(photo) =>
+                  setDemoScenario(photo ? { label: photo.label, ...photo.context } : null)
+                }
               />
             </motion.div>
           )}
@@ -142,6 +139,8 @@ export default function App() {
               <StepSuggest
                 userInventory={userInventory}
                 onSelectRecipe={handleSelectRecipe}
+                initialContext={demoScenario}
+                demoLabel={demoScenario?.label}
               />
             </motion.div>
           )}
@@ -178,7 +177,7 @@ export default function App() {
               />
             </motion.div>
           )}
-        </AnimatePresence>
+        </>
       </main>
 
       {/* React Bits Animated macOS Dock */}

@@ -1,5 +1,9 @@
 import Groq from 'groq-sdk';
 
+const PANTRY_STAPLES = new Set(['salt', 'water']);
+const isPantryStaple = (name = '') =>
+  PANTRY_STAPLES.has(String(name).toLowerCase().trim());
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -19,9 +23,11 @@ export default async function handler(req, res) {
   const missingItems = [];
 
   recipeIngredients.forEach((item) => {
-    const isAvailable = inventoryNames.some(
-      (inv) => inv.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(inv)
-    );
+    const isAvailable =
+      isPantryStaple(item.name) ||
+      inventoryNames.some(
+        (inv) => inv.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(inv)
+      );
     if (isAvailable) {
       availableItems.push(item);
     } else {

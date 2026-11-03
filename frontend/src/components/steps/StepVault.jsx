@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Clock, Star, X, ArrowRight, Layers, CheckCircle2 } from 'lucide-react';
+import { getAccurateRecipeImage } from '../../lib/recipeImages';
 
 const SEEDED_VAULT_RECIPES = [
   {
@@ -59,7 +60,7 @@ const SEEDED_VAULT_RECIPES = [
     prepTime: '20m',
     difficulty: 'Easy',
     rating: 4,
-    image: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281292?w=800&auto=format&fit=crop&q=80',
+    image: 'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=800&auto=format&fit=crop&q=80',
     description: 'Al dente penne tossed in blistered cherry tomatoes, olive oil, roasted garlic chips, and fresh basil.',
     ingredients: [
       { name: 'Penne Pasta', amount: '200g' },
@@ -109,29 +110,41 @@ export default function StepVault({ onCookAgain }) {
       localItems = JSON.parse(localStorage.getItem('platewise_vault') || '[]');
     } catch {}
 
-    const formatEntry = (item) => ({
-      id: item.id || `vault-${Date.now()}-${Math.random()}`,
-      title: item.title,
-      culture: 'Saved Dish',
-      cookedAt: new Date(item.cookedAt).toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      prepTime: '20m',
-      rating: item.rating || 5,
-      image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80',
-      description: 'Custom recipe saved from your active cooking session.',
-      ingredients: [{ name: 'Core Ingredients', amount: 'In Stock' }],
-      steps: ['Followed step-by-step guidance.'],
-    });
+    const formatEntry = (item) => {
+      const description = item.description || 'Custom recipe saved from your active cooking session.';
+      return {
+        id: item.id || `vault-${Date.now()}-${Math.random()}`,
+        title: item.title,
+        culture: item.culture || 'Saved Dish',
+        cookedAt: new Date(item.cookedAt).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        prepTime: item.prepTime || '20m',
+        difficulty: item.difficulty || 'Easy',
+        rating: item.rating || 5,
+        image: item.image || getAccurateRecipeImage(item.title, description),
+        description,
+        ingredients:
+          Array.isArray(item.ingredients) && item.ingredients.length > 0
+            ? item.ingredients
+            : [{ name: 'Core Ingredients', amount: 'In Stock' }],
+        steps:
+          Array.isArray(item.steps) && item.steps.length > 0
+            ? item.steps
+            : ['Followed step-by-step guidance.'],
+      };
+    };
 
     fetch('/api/vault')
       .then((res) => res.json())
       .then((json) => {
         const remoteItems = json.success && Array.isArray(json.data) ? json.data : [];
-        const combined = [...remoteItems, ...localItems];
+        // Local entries carry the full recipe; remote storage is in-memory on
+        // serverless. Put local first so deduplication keeps the rich copy.
+        const combined = [...localItems, ...remoteItems];
         // Deduplicate by title + cookedAt
         const seen = new Set();
         const unique = [];

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, Play, CheckCircle, ExternalLink } from 'lucide-react';
+import { getAccurateRecipeImage } from '../../lib/recipeImages';
 
 export default function StepCook({ recipe, onBack, onCompleteRecipe }) {
   const [completedSteps, setCompletedSteps] = useState([]);
@@ -18,10 +19,12 @@ export default function StepCook({ recipe, onBack, onCompleteRecipe }) {
     onCompleteRecipe(recipe);
   };
 
-  // Embed the real #1 search result recipe video directly from YouTube
-  const embedUrl = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(
-    'how to cook recipe ' + recipe.title
+  // A search embed (listType=search) is unreliable and often renders blank.
+  // A tutorial card that opens YouTube in a new tab always works on stage.
+  const tutorialUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+    `how to cook ${recipe.title} recipe`
   )}`;
+  const posterUrl = recipe.image || getAccurateRecipeImage(recipe.title, recipe.description);
 
   return (
     <div className="space-y-6">
@@ -38,27 +41,44 @@ export default function StepCook({ recipe, onBack, onCompleteRecipe }) {
 
       {/* Video & Step Checklist Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left (7 cols): Real Culinary Video Player */}
+        {/* Left (7 cols): Tutorial card (opens YouTube reliably) */}
         <div className="lg:col-span-7 space-y-3">
-          <div className="relative aspect-video rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl">
-            <iframe
-              src={embedUrl}
-              title={`Cooking tutorial for ${recipe.title}`}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="w-full h-full object-cover"
+          <a
+            href={tutorialUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="group relative block aspect-video rounded-3xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl"
+          >
+            <img
+              src={posterUrl}
+              alt={`${recipe.title} tutorial`}
+              className="w-full h-full object-cover opacity-65 group-hover:opacity-50 group-hover:scale-105 transition-all duration-500"
             />
-          </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center p-6">
+              <span className="w-14 h-14 rounded-full bg-white text-neutral-900 flex items-center justify-center shadow-xl group-hover:scale-105 transition-transform">
+                <Play className="w-5 h-5 fill-current ml-0.5" />
+              </span>
+              <div>
+                <p className="text-sm sm:text-base font-semibold text-white">
+                  Watch a step-by-step tutorial
+                </p>
+                <p className="text-[11px] font-mono text-neutral-300 mt-1">
+                  Opens a YouTube search for “{recipe.title}”
+                </p>
+              </div>
+            </div>
+          </a>
 
           <div className="flex items-center justify-between text-xs font-mono text-neutral-500 px-1">
-            <span>Video source: YouTube Cooking Masterclass</span>
+            <span>Tutorial search opens on YouTube</span>
             <a
-              href={`https://www.youtube.com/results?search_query=how+to+cook+${encodeURIComponent(recipe.title)}`}
+              href={tutorialUrl}
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1 hover:text-neutral-900 underline underline-offset-4"
             >
-              <span>Open in YouTube App</span>
+              <span>Open on YouTube</span>
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>

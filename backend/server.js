@@ -15,6 +15,12 @@ const ingredientClassifier = new IngredientClassifier();
 
 dotenv.config();
 
+// Salt and water are assumed in every kitchen. Counting them as missing made a
+// fully stocked demo pantry show 86% ready and produced nonsense substitutions.
+const PANTRY_STAPLES = new Set(['salt', 'water']);
+const isPantryStaple = (name = '') =>
+  PANTRY_STAPLES.has(String(name).toLowerCase().trim());
+
 const app = express();
 
 // Some shells export PORT=0, and the string "0" is truthy -- so the original
@@ -398,130 +404,17 @@ const selectIngredients = (predictions) => {
   return picked;
 };
 
-// Fallback high-res recipes tailored to the seeded kitchen inventory
-const FALLBACK_RECIPES = [
-  {
-    id: 'dish-1',
-    title: 'Mediterranean Roasted Summer Veggie Medley',
-    culture: 'Continental',
-    mealType: 'Dinner',
-    season: 'Monsoon',
-    prepTime: '25m',
-    difficulty: 'Easy',
-    servings: 2,
-    youtubeId: '9nJbE39hK_M',
-    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=800&auto=format&fit=crop&q=80',
-    description: 'Caramelized zucchini ribbons, sweet bell peppers, mushrooms, green beans, and roasted garlic tossed in aromatic olive oil and herbs.',
-    ingredients: [
-      { name: 'Zucchini', amount: '2 medium sliced', category: 'Produce' },
-      { name: 'Bell Peppers / Capsicum', amount: '2 chopped', category: 'Produce' },
-      { name: 'Mushrooms', amount: '200g sliced', category: 'Produce' },
-      { name: 'Green Beans', amount: '150g trimmed', category: 'Produce' },
-      { name: 'Potatoes', amount: '2 medium diced', category: 'Produce' },
-      { name: 'Garlic', amount: '5 cloves minced', category: 'Produce' },
-      { name: 'Olive Oil', amount: '3 tbsp', category: 'Oils & Sauces' },
-      { name: 'Oregano & Chili Flakes', amount: '1 tsp', category: 'Spices' },
-      { name: 'Black Pepper', amount: '1/2 tsp', category: 'Spices' },
-      { name: 'Fresh Parsley', amount: '2 tbsp finely chopped', category: 'Produce' }
-    ],
-    steps: [
-      'Preheat cast iron skillet or baking tray with 2 tbsp extra virgin olive oil.',
-      'Toss cubed potatoes, sliced zucchini, bell peppers, and green beans with minced garlic, paprika, and dried oregano.',
-      'Sauté on medium-high until vegetables develop charred, golden edges.',
-      'Add sliced mushrooms during the last 6 minutes so they retain their juicy texture.',
-      'Season with freshly cracked black pepper and finish with chopped fresh parsley and mint leaves.'
-    ]
-  },
-  {
-    id: 'dish-2',
-    title: 'Rustic Mushroom & Tomato Skillet Sauté',
-    culture: 'Continental',
-    mealType: 'Dinner',
-    season: 'Monsoon',
-    prepTime: '15m',
-    difficulty: 'Easy',
-    servings: 2,
-    youtubeId: 'VnJ8_k1y34o',
-    image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800&auto=format&fit=crop&q=80',
-    description: 'Juicy skillet-seared button mushrooms braised in blistered ripe tomatoes, sweet onions, garlic, and fresh garden mint.',
-    ingredients: [
-      { name: 'Mushrooms', amount: '250g sliced', category: 'Produce' },
-      { name: 'Tomatoes', amount: '3 ripe diced', category: 'Produce' },
-      { name: 'Onions', amount: '1 medium sliced', category: 'Produce' },
-      { name: 'Garlic', amount: '4 cloves crushed', category: 'Produce' },
-      { name: 'Olive Oil', amount: '2 tbsp', category: 'Oils & Sauces' },
-      { name: 'Fresh Parsley', amount: '2 tbsp chopped', category: 'Produce' },
-      { name: 'Black Pepper', amount: '1/2 tsp freshly ground', category: 'Spices' },
-      { name: 'Red Chili Powder', amount: '1/2 tsp paprika', category: 'Spices' }
-    ],
-    steps: [
-      'Heat olive oil in a heavy skillet until shimmering.',
-      'Sauté sliced onions and crushed garlic on medium heat until golden and sweet.',
-      'Toss in sliced mushrooms and sear undisturbed for 3 minutes to develop deep umami browning.',
-      'Fold in chopped tomatoes, paprika, and cracked black pepper; simmer gently until a glossy rustic sauce forms.',
-      'Garnish generously with chopped parsley and fresh mint leaves before serving hot.'
-    ]
-  },
-  {
-    id: 'dish-3',
-    title: 'Crispy Skillet Herb Potatoes with Green Beans',
-    culture: 'Continental',
-    mealType: 'Breakfast',
-    season: 'Monsoon',
-    prepTime: '20m',
-    difficulty: 'Easy',
-    servings: 2,
-    youtubeId: 'r53mK66vK90',
-    image: 'https://images.unsplash.com/photo-1518013031184-41d4bd60014b?w=800&auto=format&fit=crop&q=80',
-    description: 'Golden, crispy skillet-fried potato cubes tossed with tender-crisp green beans, garlic chips, paprika, and herbs.',
-    ingredients: [
-      { name: 'Potatoes', amount: '3 medium cubed', category: 'Produce' },
-      { name: 'Green Beans', amount: '200g trimmed', category: 'Produce' },
-      { name: 'Garlic', amount: '4 cloves sliced thin', category: 'Produce' },
-      { name: 'Olive Oil', amount: '2 tbsp', category: 'Oils & Sauces' },
-      { name: 'Red Chili Powder', amount: '1 tsp paprika', category: 'Spices' },
-      { name: 'Oregano & Chili Flakes', amount: '1 tsp', category: 'Spices' },
-      { name: 'Black Pepper', amount: '1/2 tsp', category: 'Spices' }
-    ],
-    steps: [
-      'Steam or par-boil potato cubes for 5 minutes until just fork-tender, then drain thoroughly.',
-      'Heat 2 tbsp olive oil in your skillet over medium heat.',
-      'Add potato cubes and sear until golden and crusty on all sides (approx 8-10 minutes).',
-      'Toss in sliced garlic and trimmed green beans; stir-fry for 4 minutes until bright green and tender.',
-      'Dust with paprika, oregano, sea salt, and black pepper. Serve steaming hot.'
-    ]
-  },
-  {
-    id: 'dish-4',
-    title: 'Fresh Garden Ratatouille Skillet Stew',
-    culture: 'Continental',
-    mealType: 'Dinner',
-    season: 'Monsoon',
-    prepTime: '30m',
-    difficulty: 'Medium',
-    servings: 3,
-    youtubeId: 'sF2d4bZf8aE',
-    image: 'https://images.unsplash.com/photo-1572441713132-c542fc4fe282?w=800&auto=format&fit=crop&q=80',
-    description: 'A vibrant French provincial skillet stew of slow-simmered vine tomatoes, layered zucchini, bell peppers, onions, and garlic olive oil.',
-    ingredients: [
-      { name: 'Tomatoes', amount: '4 ripe pureed/diced', category: 'Produce' },
-      { name: 'Zucchini', amount: '2 medium sliced in rounds', category: 'Produce' },
-      { name: 'Bell Peppers / Capsicum', amount: '1 large sliced', category: 'Produce' },
-      { name: 'Onions', amount: '2 medium sliced', category: 'Produce' },
-      { name: 'Garlic', amount: '6 cloves minced', category: 'Produce' },
-      { name: 'Olive Oil', amount: '3 tbsp', category: 'Oils & Sauces' },
-      { name: 'Oregano & Chili Flakes', amount: '1 tsp', category: 'Spices' },
-      { name: 'Fresh Parsley', amount: '2 tbsp', category: 'Produce' }
-    ],
-    steps: [
-      'In a wide skillet, simmer minced garlic, onions, and crushed tomatoes with olive oil and oregano for 8 minutes to form the rich foundation sauce.',
-      'Arrange sliced zucchini, bell peppers, and mushrooms in alternating concentric circles over the tomato sauce.',
-      'Drizzle with olive oil, sprinkle with salt, black pepper, and chili flakes.',
-      'Cover skillet with a lid and braise over low heat for 18 minutes until tender and deeply flavorful.',
-      'Uncover, garnish with fresh parsley and mint, and enjoy with toasted rustic bread.'
-    ]
+let curatedRecipeEngine = null;
+
+// The offline menu is shared with the serverless API so the local demo and the
+// deployed app answer the same way. Without this, every photo and every cuisine
+// fell back to one hardcoded four-recipe list with repeated photos.
+const getCuratedRecipeEngine = async () => {
+  if (!curatedRecipeEngine) {
+    curatedRecipeEngine = await import('../lib/curatedRecipes.js');
   }
-];
+  return curatedRecipeEngine;
+};
 
 // 1. Contextual Recommendations (Prioritizing scanned inventory)
 app.get('/api/recommendations', async (req, res) => {
@@ -544,6 +437,8 @@ Generate 4 distinct, appetizing recipes tailored specifically for:
 - Cuisine: ${culture}
 
 CRITICAL: You MUST prioritize dishes that directly utilize the available scanned ingredients above, minimizing missing items!
+Make the four recipes genuinely different: different dish families, different primary ingredients, and different cooking methods. Never repeat a title or return minor variations of the same dish.
+Do not include an image field; the app assigns a photo to each recipe.
 
 Return ONLY valid JSON matching:
 {
@@ -585,10 +480,19 @@ Return ONLY valid JSON matching:
     }
   }
 
+  const { selectCuratedRecipes } = await getCuratedRecipeEngine();
   return res.json({
     success: true,
     source: 'curated-engine',
-    data: FALLBACK_RECIPES,
+    data: selectCuratedRecipes({
+      inventory: inventory
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+      timeOfDay,
+      season,
+      culture,
+    }),
   });
 });
 
@@ -778,9 +682,11 @@ app.post('/api/audit-ingredients', async (req, res) => {
   const missingItems = [];
 
   recipeIngredients.forEach((item) => {
-    const isAvailable = inventoryNames.some((inv) =>
-      inv.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(inv)
-    );
+    const isAvailable =
+      isPantryStaple(item.name) ||
+      inventoryNames.some((inv) =>
+        inv.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(inv)
+      );
     if (isAvailable) {
       availableItems.push(item);
     } else {
@@ -879,6 +785,24 @@ app.post('/api/vault', (req, res) => {
   res.json({ success: true, data: userVault });
 });
 
+// Warm the vision models at boot so the first live scan is not the request that
+// pays the model-loading cost. Failures are logged and never block the server.
+const warmVisionModels = async () => {
+  try {
+    const classifier = await ingredientClassifier.load();
+    if (classifier) console.log('[Vision AI] Ingredient classifier ready.');
+  } catch (err) {
+    console.error('[Vision AI] Ingredient classifier warm-up failed:', err.message);
+  }
+
+  try {
+    await loadVisionPipeline();
+  } catch (err) {
+    console.error('[Vision AI] CLIP warm-up failed:', err.message);
+  }
+};
+
 app.listen(PORT, () => {
   console.log(`[PlateWise Server] Running on http://localhost:${PORT}`);
+  warmVisionModels();
 });

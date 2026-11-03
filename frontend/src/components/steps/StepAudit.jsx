@@ -9,6 +9,10 @@ import {
   ChevronLeft
 } from 'lucide-react';
 
+const PANTRY_STAPLES = new Set(['salt', 'water']);
+const isPantryStaple = (name = '') =>
+  PANTRY_STAPLES.has(String(name).toLowerCase().trim());
+
 export default function StepAudit({
   recipe,
   userInventory,
@@ -45,6 +49,7 @@ export default function StepAudit({
   }, [recipe, userInventory]);
 
   const handleToggleIngredient = (ingredientName) => {
+    if (isPantryStaple(ingredientName)) return;
     const exists = userInventory.some((i) =>
       (typeof i === 'string' ? i : i.name).toLowerCase() === ingredientName.toLowerCase()
     );
@@ -123,10 +128,12 @@ export default function StepAudit({
 
           <div className="divide-y divide-neutral-100 rounded-2xl border border-neutral-200/90 bg-white overflow-hidden shadow-xs">
             {recipe.ingredients?.map((item, idx) => {
-              const isAvailable = userInventory.some((inv) =>
-                (typeof inv === 'string' ? inv : inv.name).toLowerCase().includes(item.name.toLowerCase()) ||
-                item.name.toLowerCase().includes((typeof inv === 'string' ? inv : inv.name).toLowerCase())
-              );
+              const isAvailable =
+                isPantryStaple(item.name) ||
+                userInventory.some((inv) =>
+                  (typeof inv === 'string' ? inv : inv.name).toLowerCase().includes(item.name.toLowerCase()) ||
+                  item.name.toLowerCase().includes((typeof inv === 'string' ? inv : inv.name).toLowerCase())
+                );
 
               return (
                 <div

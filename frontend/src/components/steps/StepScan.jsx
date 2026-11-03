@@ -3,14 +3,13 @@ import { Camera, Upload, ArrowRight, X, Search, Check, Sparkles, Image as ImageI
 import { HOUSEHOLD_INGREDIENTS, INGREDIENT_CATEGORIES } from '../../data/householdIngredients';
 import { DEMO_PHOTOS } from '../../data/demoPhotos';
 
-export default function StepScan({ userInventory, setUserInventory, onNext }) {
+export default function StepScan({ userInventory, setUserInventory, onNext, onDemoLoad }) {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState(null);
   const [scanStatus, setScanStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [isDragging, setIsDragging] = useState(false);
-  const [demoBusy, setDemoBusy] = useState(null);
   const fileInputRef = useRef(null);
   const dragCounter = useRef(0);
 
@@ -80,6 +79,8 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
       return;
     }
 
+    // A manual upload is no longer the previous demo scenario.
+    onDemoLoad?.(null);
     setLoading(true);
     setScanStatus('Preparing photo...');
     try {
@@ -107,35 +108,19 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
     }
   };
 
-  // Demo Mode runs the SAME request as a normal upload -- nothing is stubbed.
-  // The photos were checked against the live model before shipping (see
-  // backend/scripts/build-demo-set.mjs), so the demo shows real inference on
-  // inputs that are known to be in distribution.
-  const runDemoPhoto = async (photo) => {
+  // Demo cards are curated scenes rather than blind uploads: each photo ships
+  // with the pantry that is actually visible in the frame. That gives the
+  // walkthrough a coherent starting point and, crucially, a different menu for
+  // every demo image instead of the same fallback pantry three times.
+  const runDemoPhoto = (photo) => {
     if (loading) return;
-    setDemoBusy(photo.id);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    onDemoLoad?.(photo);
     setPreview(photo.file);
-    setScanStatus(`Scanning ${photo.label}...`);
-    try {
-      const res = await fetch(photo.file);
-      if (!res.ok) throw new Error(`Could not load ${photo.file}`);
-      const blob = await res.blob();
-      const reader = new FileReader();
-      const dataUrl = await new Promise((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-      // Demo scans replace the pantry so the walkthrough starts from a coherent,
-      // predictable state instead of accumulating items between clicks.
-      await runNeuralVisionScan(blob, dataUrl, { replacePantry: true });
-    } catch (err) {
-      console.error('Demo photo error:', err);
-      setScanStatus(err.message || 'Could not load that demo photo.');
-      setLoading(false);
-    } finally {
-      setDemoBusy(null);
-    }
+    setUserInventory(photo.inventory.map((item) => ({ ...item })));
+    setScanStatus(
+      `Loaded the ${photo.label} demo kitchen: ${photo.inventory.length} ingredients.`
+    );
   };
 
   const runNeuralVisionScan = async (file, base64, { replacePantry = false } = {}) => {
@@ -361,19 +346,21 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
             <div className="flex items-center justify-between mb-3 px-1">
               <p className="text-xs font-mono text-neutral-600 inline-flex items-center gap-1.5 font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                Or test with multi-ingredient demo photos
+                Or explore a demo kitchen
               </p>
-              <span className="text-[10px] font-mono text-neutral-400 hidden sm:inline">1-click AI scan</span>
+              <span className="text-[10px] font-mono text-neutral-400 hidden sm:inline">1-click pantry</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {DEMO_PHOTOS.map((photo) => (
+              {DEMO_PHOTOS.map((photo) => {
+                const isActive = preview === photo.file;
+                return (
                 <button
                   key={photo.id}
                   type="button"
                   onClick={() => runDemoPhoto(photo)}
                   disabled={loading}
                   className={`group relative text-left p-3 rounded-2xl border transition-all flex flex-col justify-between ${
-                    demoBusy === photo.id
+                    isActive
                       ? 'border-neutral-900 ring-2 ring-neutral-900/20 bg-neutral-50'
                       : 'border-neutral-200 hover:border-neutral-400 bg-white hover:shadow-md hover:-translate-y-0.5'
                   } ${loading ? 'opacity-60 cursor-wait' : ''}`}
@@ -385,7 +372,7 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-xs text-[10px] font-mono font-medium text-white shadow-xs">
-                      {photo.itemCount}
+                      {photo.inventory.length} items
                     </span>
                     <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-white/90 backdrop-blur-xs text-[9px] font-mono font-medium text-neutral-800 shadow-xs">
                       {photo.category}
@@ -400,7 +387,8 @@ export default function StepScan({ userInventory, setUserInventory, onNext }) {
                     </div>
                   </div>
                 </button>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}

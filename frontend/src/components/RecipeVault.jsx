@@ -59,7 +59,7 @@ const SEEDED_VAULT_RECIPES = [
     prepTime: '20m',
     difficulty: 'Easy',
     rating: 4,
-    image: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281292?w=600&auto=format&fit=crop&q=80',
+    image: 'https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=600&auto=format&fit=crop&q=80',
     description: 'Al dente penne tossed in blistered cherry tomatoes, olive oil, roasted garlic chips, and fresh basil.',
     ingredients: [
       { name: 'Penne Pasta', amount: '200g' },

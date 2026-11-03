@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Clock, ChevronRight, RefreshCw, Layers } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Clock, ChevronRight, RefreshCw, Layers, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SpotlightCard from '../reactbits/SpotlightCard';
-import { getAccurateRecipeImage } from '../../lib/recipeImages';
+import { assignRecipeImages } from '../../lib/recipeImages';
 
-export default function StepSuggest({ onSelectRecipe, userInventory = [] }) {
-  const [timeOfDay, setTimeOfDay] = useState('Dinner');
-  const [season, setSeason] = useState('Monsoon');
-  const [culture, setCulture] = useState('Indian Comfort');
+const PANTRY_STAPLES = new Set(['salt', 'water']);
+const isPantryStaple = (name = '') =>
+  PANTRY_STAPLES.has(String(name).toLowerCase().trim());
+
+export default function StepSuggest({ onSelectRecipe, userInventory = [], initialContext = null, demoLabel = '' }) {
+  const [timeOfDay, setTimeOfDay] = useState(initialContext?.timeOfDay || 'Dinner');
+  const [season, setSeason] = useState(initialContext?.season || 'Monsoon');
+  const [culture, setCulture] = useState(initialContext?.culture || 'Indian Comfort');
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(false);
   const lastFetchedKey = useRef('');
@@ -47,17 +51,39 @@ export default function StepSuggest({ onSelectRecipe, userInventory = [] }) {
     fetchRecommendations(false);
   }, [timeOfDay, season, culture, inventoryString]);
 
+  // Each demo kitchen carries the context that makes its pantry coherent.
+  useEffect(() => {
+    if (!initialContext) return;
+    setTimeOfDay(initialContext.timeOfDay || 'Dinner');
+    setSeason(initialContext.season || 'Monsoon');
+    setCulture(initialContext.culture || 'Indian Comfort');
+  }, [initialContext]);
+
+  // Give every card its own photo. AI responses carry no image, and the curated
+  // engine can still contain two dishes of the same family, so resolve the grid
+  // as a set instead of letting each card pick independently.
+  const recipeImages = useMemo(() => assignRecipeImages(recipes), [recipes]);
+
   const computeMatch = (recipe) => {
     if (!recipe.ingredients || recipe.ingredients.length === 0) return 100;
     const invNames = userInventory.map((i) => (typeof i === 'string' ? i : i.name).toLowerCase());
-    const count = recipe.ingredients.filter((req) =>
-      invNames.some((inv) => inv.includes(req.name.toLowerCase()) || req.name.toLowerCase().includes(inv))
+    const count = recipe.ingredients.filter(
+      (req) =>
+        isPantryStaple(req.name) ||
+        invNames.some((inv) => inv.includes(req.name.toLowerCase()) || req.name.toLowerCase().includes(inv))
     ).length;
     return Math.round((count / recipe.ingredients.length) * 100);
   };
 
   return (
     <div className="space-y-8">
+      {demoLabel && (
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-mono text-amber-800">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Demo kitchen · {demoLabel}</span>
+        </div>
+      )}
+
       {/* Magnetic Filter Controls */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -156,9 +182,9 @@ export default function StepSuggest({ onSelectRecipe, userInventory = [] }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {recipes.map((recipe) => {
+          {recipes.map((recipe, index) => {
             const matchScore = computeMatch(recipe);
-            const imageUrl = getAccurateRecipeImage(recipe.title, recipe.description);
+            const imageUrl = recipeImages[index];
 
             return (
               <SpotlightCard
